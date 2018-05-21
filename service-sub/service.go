@@ -102,6 +102,7 @@ func datastoreHandler(w http.ResponseWriter, r *http.Request, e entityEntryDatas
 	ctx_default := appengine.NewContext(r)
 
 	appengine_log.Infof(ctx_default, "Starting service.....")
+
 	if r.Body == nil {
       appengine_log.Infof(ctx_default, "ERROR: Please send a request body")
       return

@@ -65,9 +65,9 @@ func pullSODADataHandler(w http.ResponseWriter, r *http.Request) {
 		go func() {
 			  defer ogr.Done()
 
-//			for ;; {
+			for ;; {
 				resp, err := ogr.Next(1)
-//				if err == soda.ErrDone { break }
+				if err == soda.ErrDone { break }
 				if err != nil { log.Fatal(err) }
 
 				results := make([]map[string]interface{}, 0)
@@ -94,7 +94,7 @@ func pullSODADataHandler(w http.ResponseWriter, r *http.Request) {
 					log.Print("INFO: Response from pub service: " + string(body_byte) + "\n\n")
       	}
 
-//			}
+			}
 		}()
 
 	}

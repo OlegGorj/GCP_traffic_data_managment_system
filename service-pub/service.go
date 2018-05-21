@@ -79,7 +79,7 @@ func publishHandler(w http.ResponseWriter, r *http.Request) {
 			}
 
 			// publish to topic
-			log.Print("INFO: Calling PUB service at project " + projectName)
+			// log.Print("DEBUG: Calling PUB service at project " + projectName)
 			client, err := pubsub.NewClient(ctx, projectName)
 			if err != nil {
 				log.Fatalf("Could not create pubsub Client:" + err.Error() + "for project" + projectName)
