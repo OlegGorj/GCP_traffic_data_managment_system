@@ -16,8 +16,8 @@ handlers:
   script: _go_app
 
 automatic_scaling:
-  target_cpu_utilization: 0.75
-  max_instances: 5
+  target_cpu_utilization: 0.6
+  max_instances: 25
   min_instances: 1
 
 # FLEX environment

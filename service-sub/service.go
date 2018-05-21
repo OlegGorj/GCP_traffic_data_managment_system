@@ -135,12 +135,14 @@ func datastoreHandler(w http.ResponseWriter, r *http.Request, e entityEntryDatas
 	//log.Print("DEBUG: key: " + key.String())
 	//log.Print("DEBUG: entry: " + e.Street)
 
-	newkey, err := datastore.Put(ctx, key, &e)
-	if err != nil {
-		io.WriteString(w, "{\"status\":\"1\", \"message\":\"Can't execute operation datastore-Put\n\"}")
-		appengine_log.Errorf(ctx,"Can't execute operation Datastore PUT: " + err.Error() + "\n")
-	}
-	appengine_log.Infof(ctx, "DEBUG: saved record Entry type with the key: " + newkey.String() + "\n")
+	go func() {
+		newkey, err := datastore.Put(ctx, key, &e)
+		if err != nil {
+			io.WriteString(w, "{\"status\":\"1\", \"message\":\"Can't execute operation datastore-Put\n\"}")
+			appengine_log.Errorf(ctx,"Can't execute operation Datastore PUT: " + err.Error() + "\n")
+		}
+		appengine_log.Infof(ctx, "DEBUG: saved record Entry type with the key: " + newkey.String() + "\n")
+	}()
 
 }
 
