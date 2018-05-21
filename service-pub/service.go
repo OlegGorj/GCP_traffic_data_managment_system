@@ -72,7 +72,7 @@ func publishHandler(w http.ResponseWriter, r *http.Request) {
 		    log.Fatalf("ERROR: Could not decode body into publishEnvelope with Unmarshal: %s \n", string(body))
 		  }
 			jsondata, _ := json.Marshal(msg.Data)
-			log.Printf("DEBUG: Topic from envelope: "    + msg.Topic + "\n Data-json from envelope"    + string(jsondata) + "\n")
+			//log.Printf("DEBUG: Topic from envelope: "    + msg.Topic + "\n Data-json from envelope"    + string(jsondata) + "\n")
 			topicName := msg.Topic
 			if topicName == "" {
 				log.Fatalf("ERROR: Topic name is empty")
@@ -84,14 +84,6 @@ func publishHandler(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				log.Fatalf("Could not create pubsub Client:" + err.Error() + "for project" + projectName)
 			}
-
-// projects/tf-admin-aabm0pul/topics/us.chicago-city.transportation.traffic-tracker-congestion-estimates
-//			func () {
-//				log.Print("DEBUG: Listing all topics from the project:")
-//				topics, err := list(client)
-//				if err != nil {  log.Fatalf("Failed to list topics: %v", err)  }
-//				for _, t := range topics { log.Print("DEBUG:\t\t " + t.String())  }
-//			}()
 
 			if err := publish(client, topicName, string(jsondata) ); err != nil {
 				log.Fatalf("Failed to publish: %v. Topic name: %s\n", err, topicName)

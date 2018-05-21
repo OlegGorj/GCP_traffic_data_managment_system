@@ -17,7 +17,7 @@ handlers:
 
 automatic_scaling:
   target_cpu_utilization: 0.75
-  max_instances: 4
+  max_instances: 5
   min_instances: 1
 
 # FLEX environment

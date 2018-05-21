@@ -23,21 +23,6 @@ var (
 	sourceSODAUri string
 	publishTopic string
 )
-//{
-//    "_direction": "WB",
-//    "_fromst": "Lake Shore Dr",
-//    "_last_updt": "2011-08-10 00:00:00.0",
-//    "_length": "0.37",
-//    "_lif_lat": "41.896936",
-//    "_lit_lat": "41.896835",
-//    "_lit_lon": "-87.624241",
-//    "_strheading": "E",
-//    "_tost": "Michigan",
-//    "_traffic": "-1",
-//    "segmentid": "1284",
-//    "start_lon": "-87.617048",
-//    "street": "Chicago"
-//}
 
 func main() {
 

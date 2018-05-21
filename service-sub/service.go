@@ -29,13 +29,11 @@ var (
   countMu sync.Mutex
 	count   int
   subscription *pubsub.Subscription
-	datastoreServiceUri string
 	datasetParentKey string
 	datasetNamespace string
 )
 
 func main() {
-	datastoreServiceUri = getENV("DATASTORE_SERVICE")
 	datasetParentKey = getENV("DATASET_PARENT_KEY")
 	datasetNamespace = getENV("DS_NAMESPACE")
 
