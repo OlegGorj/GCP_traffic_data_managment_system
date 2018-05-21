@@ -133,32 +133,8 @@ func datastoreHandler(w http.ResponseWriter, r *http.Request, e entityEntryDatas
 	key := datastore.NewKey(ctx, "entry", "", 0, parentkey)
 	fmt.Fprintf(w, "key: " + key.String() + ", key.Namespace: " + key.Namespace() + "\n")
 
-	log.Print("DEBUG: key: " + key.String())
-
-	log.Print("DEBUG: entry: " + e.Street)
-
-	e1 := entityEntryDatastoreStruct{
-		Direction: "WB",
-		Fromst:"Moe",
-		Last_updt:"2010-07-21 14:50:26.0" ,
-		Length:"0.39",
-		Lif_lat:"41.83866775",
-		Lit_lat:"41.8385534682",
-		Lit_lon:"-87.6174113534",
-		Strheading:"E",
-		Tost:"Dr Martin L King Jr",
-		Traffic:"-1",
-		Segmentid:"438",
-		Start_lon:"-87.6098408684",
-		Street:"31st"}
-
-	newkey, err := datastore.Put(ctx, key, &e1)
-	if err != nil {
-		io.WriteString(w, "{\"status\":\"1\", \"message\":\"Can't execute operation datastore-Put\n\"}")
-		appengine_log.Errorf(ctx,"Can't execute operation Datastore PUT: " + err.Error() + "\n")
-	}
-	appengine_log.Infof(ctx, "DEBUG: saved record Entry type with the key: " + newkey.String() + "\n")
-
+	//log.Print("DEBUG: key: " + key.String())
+	//log.Print("DEBUG: entry: " + e.Street)
 
 	newkey, err = datastore.Put(ctx, key, &e)
 	if err != nil {
@@ -166,8 +142,6 @@ func datastoreHandler(w http.ResponseWriter, r *http.Request, e entityEntryDatas
 		appengine_log.Errorf(ctx,"Can't execute operation Datastore PUT: " + err.Error() + "\n")
 	}
 	appengine_log.Infof(ctx, "DEBUG: saved record Entry type with the key: " + newkey.String() + "\n")
-
-
 
 }
 
@@ -199,15 +173,6 @@ func pushHandler(w http.ResponseWriter, r *http.Request) {
   }
 
 	datastoreHandler(w, r, entityEntryDatastoreStruct(data))
-
-	// calling datastore service
-	// log.Print("DEBUG: Calling Datastore service at  " + datastoreServiceUri + "with the payload: \n" + string(sDec) + "\n")
-	// rsp, err := http.Post(datastoreServiceUri, "application/json", bytes.NewBuffer(sDec))
-	// defer rsp.Body.Close()
-	// body_byte, err := ioutil.ReadAll(rsp.Body)
-	// if err != nil { panic(err) }
-	// log.Print("INFO: Response from Datastore service: " + string(body_byte) + "\n\n")
-
 
 	w.WriteHeader(http.StatusOK)
 	io.WriteString(w, "{\"status\":\"0\", \"message\":\"ok\"}")
