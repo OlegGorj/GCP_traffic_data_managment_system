@@ -1,6 +1,6 @@
 
 # Common part
-service: save2datastore-worker
+service: pubsub2datastore-worker
 runtime: go
 env_variables:
   GOOGLE_CLOUD_PROJECT: tf-admin-aabm0pul
