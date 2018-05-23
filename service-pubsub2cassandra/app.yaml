@@ -2,15 +2,17 @@
 # Common part
 service: pubsub2cassandra-worker
 runtime: go
+
 env_variables:
   GOOGLE_CLOUD_PROJECT: tf-admin-aabm0pul
-#  PUBSUB_TOPIC: us.chicago-city.transportation.traffic-tracker-congestion-estimates
-#  DATASTORE_SERVICE: https://datastore-worker-dot-tf-admin-aabm0pul.appspot.com/entry
-  DS_NAMESPACE: NorthAmerica
-  DATASET_PARENT_KEY: ahNrfnRmLWFkbWluLWFhYm0wcHVscj0LEgdjYXRhbG9nGICAgICAgIAKDAsSCGNhdGVnb3J5GICAgICA8ogKDAsSB2RhdGFzZXQYgICAgIDXjAoMogEMTm9ydGhBbWVyaWNh
+  CASSANDRA_HOST: localhost
+  CASSANDRA_UNAME: cassandra
+  CASSANDRA_UPASS: cassandra
+  CASSANDRA_KEYSPACE: NorthAmerica
 
 # Standat environment:
 api_version: go1
+env: standard
 handlers:
 - url: /.*
   script: _go_app

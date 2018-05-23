@@ -15,10 +15,7 @@ import (
   b64 "encoding/base64"
 	_ "bytes"
 
-	appengine_log "google.golang.org/appengine/log"
 	"google.golang.org/appengine"
-	"google.golang.org/appengine/datastore"
-
   "cloud.google.com/go/pubsub"
 	_ "google.golang.org/appengine"
   _ "golang.org/x/net/context"
@@ -31,13 +28,18 @@ var (
   countMu sync.Mutex
 	count   int
   subscription *pubsub.Subscription
-	datasetParentKey string
-	datasetNamespace string
+
+	datasetKeyspace string
+	sUsername string
+	sPassword string
+	sHost string
 )
 
 func main() {
-	datasetParentKey = getENV("DATASET_PARENT_KEY")
-	datasetNamespace = getENV("DS_NAMESPACE")
+	datasetKeyspace = "tweetexample"; //getENV("CASSANDRA_KEYSPACE")
+	sUsername = "cassandra"; //getENV("CASSANDRA_UNAME")
+	sPassword = "cassandra"; //getENV("CASSANDRA_UPASS")
+	sHost = "localhost"; //getENV("CASSANDRA_HOST")
 
 	http.HandleFunc("/_ah/health", healthCheckHandler)
   http.HandleFunc("/push", pushHandler)
@@ -141,9 +143,57 @@ func getENV(k string) string {
 	return v
 }
 
+//-----------------------------------------------------------------------------------------------
+
+type tweetStruct struct {
+	timeline string `json:"timeline"`
+	id  gocql.UUID  `json:"id"`
+	text string     `json:"text"`
+}
+
+func (tw tweetStruct) isEmpty() bool {
+    return tw.id == (gocql.UUID{})
+}
+
+func (tw tweetStruct) Println() int {
+	fmt.Printf("Tweet>> %+v, %+s, %+s \n", tw.id, tw.text, tw.timeline)
+	return 0
+}
 
 func cassandraHandler(w http.ResponseWriter, r *http.Request, e entityEntryDatastoreStruct) {
 
+  const cConsistency gocql.Consistency = gocql.One
+  var id gocql.UUID
+	var text string
+
+	tweets := make([]tweetStruct, 1)
+
+	cluster := gocql.NewCluster(sHost)
+  cluster.Authenticator = gocql.PasswordAuthenticator{
+		Username: sUsername,
+		Password: sPassword,
+	}
+	cluster.Keyspace = datasetKeyspace
+	cluster.Consistency = cConsistency
+	session, err := cluster.CreateSession()
+
+	err = session.Query(`INSERT INTO tweet (timeline, id, text) VALUES (?, ?, ?)`, "me", gocql.TimeUUID(), "tweet created by simple cassandra client").Exec()
+  if err != nil { log.Fatalf("Authentication error: %s", err)  }
+
+	err = session.Query(`SELECT id, text FROM tweet WHERE timeline = ? LIMIT 1`, "me").Consistency(cConsistency).Scan(&id, &text)
+  if err != nil {  log.Fatal(err)  }
+
+	iter := session.Query(`SELECT id, text FROM tweet WHERE timeline = ?`, "me").Iter()
+	for i := 0;iter.Scan(&id, &text);i++ {
+    tweets = append(tweets, tweetStruct{"me", id, text})
+	}
+	if err := iter.Close(); err != nil { log.Fatal(err) }
+
+	for i:=0;i<len(tweets);i++ {
+		tweets[i].Println()
+	}
+
+  session.Close()
 
 }
 
