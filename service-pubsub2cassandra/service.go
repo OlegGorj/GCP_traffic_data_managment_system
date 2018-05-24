@@ -13,14 +13,9 @@ import (
   "os"
   "sync"
   b64 "encoding/base64"
-	_ "bytes"
-
 	"google.golang.org/appengine"
   "cloud.google.com/go/pubsub"
-	_ "google.golang.org/appengine"
-  _ "golang.org/x/net/context"
 	"github.com/gocql/gocql"
-
 )
 
 var (
@@ -36,10 +31,11 @@ var (
 )
 
 func main() {
-	datasetKeyspace = "tweetexample"; //getENV("CASSANDRA_KEYSPACE")
-	sUsername = "cassandra"; //getENV("CASSANDRA_UNAME")
-	sPassword = "cassandra"; //getENV("CASSANDRA_UPASS")
-	sHost = "localhost"; //getENV("CASSANDRA_HOST")
+
+	datasetKeyspace = getENV("CASSANDRA_KEYSPACE")
+	sUsername = getENV("CASSANDRA_UNAME")
+	sPassword = getENV("CASSANDRA_UPASS")
+	sHost = getENV("CASSANDRA_HOST")
 
 	http.HandleFunc("/_ah/health", healthCheckHandler)
   http.HandleFunc("/push", pushHandler)
@@ -80,22 +76,6 @@ type entityEntryJSONStruct struct {
 	Street string `json:"street"`
 }
 
-type entityEntryDatastoreStruct struct {
-	Direction string `datastore:"_direction"`
-	Fromst string `datastore:"_fromst"`
-	Last_updt string `datastore:"_last_updt"`
-	Length string `datastore:"_length"`
-	Lif_lat string `datastore:"_lif_lat"`
-	Lit_lat string `datastore:"_lit_lat"`
-	Lit_lon string `datastore:"_lit_lon"`
-	Strheading string `datastore:"_strheading"`
-	Tost string `datastore:"_tost"`
-	Traffic string `datastore:"_traffic"`
-	Segmentid string `datastore:"segmentid"`
-	Start_lon string `datastore:"start_lon"`
-	Street string `datastore:"street"`
-}
-
 
 func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "ok")
@@ -128,11 +108,10 @@ func pushHandler(w http.ResponseWriter, r *http.Request) {
     log.Printf("ERROR: Could not decode Message.Data into Entry type with Unmarshal: " + string(sDec) + "\n")
   }
 
-	cassandraHandler(w, r, entityEntryDatastoreStruct(data))
+	cassandraHandler(w, r, data)
 
 	w.WriteHeader(http.StatusOK)
 	io.WriteString(w, "{\"status\":\"0\", \"message\":\"ok\"}")
-
 }
 
 func getENV(k string) string {
@@ -144,29 +123,11 @@ func getENV(k string) string {
 }
 
 //-----------------------------------------------------------------------------------------------
-
-type tweetStruct struct {
-	timeline string `json:"timeline"`
-	id  gocql.UUID  `json:"id"`
-	text string     `json:"text"`
-}
-
-func (tw tweetStruct) isEmpty() bool {
-    return tw.id == (gocql.UUID{})
-}
-
-func (tw tweetStruct) Println() int {
-	fmt.Printf("Tweet>> %+v, %+s, %+s \n", tw.id, tw.text, tw.timeline)
-	return 0
-}
-
-func cassandraHandler(w http.ResponseWriter, r *http.Request, e entityEntryDatastoreStruct) {
+func cassandraHandler(w http.ResponseWriter, r *http.Request, e entityEntryJSONStruct) {
 
   const cConsistency gocql.Consistency = gocql.One
-  var id gocql.UUID
-	var text string
-
-	tweets := make([]tweetStruct, 1)
+	//log.Printf("INFO: sHost: "+ sHost + "\n")
+	//log.Printf("INFO: e.Street : "+ e.Street  + "\n")
 
 	cluster := gocql.NewCluster(sHost)
   cluster.Authenticator = gocql.PasswordAuthenticator{
@@ -176,25 +137,22 @@ func cassandraHandler(w http.ResponseWriter, r *http.Request, e entityEntryDatas
 	cluster.Keyspace = datasetKeyspace
 	cluster.Consistency = cConsistency
 	session, err := cluster.CreateSession()
-
-	err = session.Query(`INSERT INTO tweet (timeline, id, text) VALUES (?, ?, ?)`, "me", gocql.TimeUUID(), "tweet created by simple cassandra client").Exec()
-  if err != nil { log.Fatalf("Authentication error: %s", err)  }
-
-	err = session.Query(`SELECT id, text FROM tweet WHERE timeline = ? LIMIT 1`, "me").Consistency(cConsistency).Scan(&id, &text)
-  if err != nil {  log.Fatal(err)  }
-
-	iter := session.Query(`SELECT id, text FROM tweet WHERE timeline = ?`, "me").Iter()
-	for i := 0;iter.Scan(&id, &text);i++ {
-    tweets = append(tweets, tweetStruct{"me", id, text})
+	if err != nil {
+		log.Printf("ERROR: Error creating session: ", err.Error() + "\n")
+		log.Fatalf("Error creating session: %s", err)
 	}
-	if err := iter.Close(); err != nil { log.Fatal(err) }
 
-	for i:=0;i<len(tweets);i++ {
-		tweets[i].Println()
+	err = session.Query(
+		`INSERT INTO northamerica.datasetentry (id, Direction, Fromst, Last_updt, Length, Lif_lat, Lit_lat, Lit_lon, Strheading, Tost, Traffic, Segmentid, Start_lon, Street) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		gocql.TimeUUID(), e.Direction, e.Fromst, e.Last_updt, e.Length, e.Lif_lat, e.Lit_lat, e.Lit_lon, e.Strheading, e.Tost, e.Traffic, e.Segmentid, e.Start_lon, e.Street ).Exec()
+  if err != nil {
+		log.Printf("ERROR: Authentication error: ", err.Error() + "\n")
+		log.Fatalf("Authentication error: %s", err)
 	}
+
+	io.WriteString(w, "{\"status\":\"0\", \"message\":\"cassandra call ok\"}")
 
   session.Close()
-
 }
 
 

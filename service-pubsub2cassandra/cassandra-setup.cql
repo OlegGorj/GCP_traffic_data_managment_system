@@ -43,7 +43,7 @@ CREATE INDEX IF NOT EXISTS dataset_updated on northamerica.dataset(updated);
 
 
 // Entry
-create table northamerica.entry(
+create table northamerica.datasetentry(
   id UUID,
   direction text,
   fromst text,
@@ -60,9 +60,9 @@ create table northamerica.entry(
   street text,
   PRIMARY KEY(id) );
 
-CREATE INDEX IF NOT EXISTS dataset_direction on northamerica.entry(direction);
-CREATE INDEX IF NOT EXISTS dataset_segmentid on northamerica.entry(segmentid);
-CREATE INDEX IF NOT EXISTS dataset_street on northamerica.entry(street);
-CREATE INDEX IF NOT EXISTS dataset_strheading on northamerica.entry(strheading);
-CREATE INDEX IF NOT EXISTS dataset_last_updt on northamerica.entry(last_updt);
-CREATE INDEX IF NOT EXISTS dataset_traffic on northamerica.entry(traffic);
+CREATE INDEX IF NOT EXISTS dataset_direction on northamerica.datasetentry(direction);
+CREATE INDEX IF NOT EXISTS dataset_segmentid on northamerica.datasetentry(segmentid);
+CREATE INDEX IF NOT EXISTS dataset_street on northamerica.datasetentry(street);
+CREATE INDEX IF NOT EXISTS dataset_strheading on northamerica.datasetentry(strheading);
+CREATE INDEX IF NOT EXISTS dataset_last_updt on northamerica.datasetentry(last_updt);
+CREATE INDEX IF NOT EXISTS dataset_traffic on northamerica.datasetentry(traffic);
