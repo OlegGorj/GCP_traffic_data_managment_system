@@ -1,12 +1,11 @@
+
 # Common part
-service: datasource-soda-worker
+service: subscription-worker
 runtime: go
 env_variables:
   GOOGLE_CLOUD_PROJECT: tf-admin-aabm0pul
   PUBSUB_TOPIC: us.chicago-city.transportation.traffic-tracker-congestion-estimates
-  PUBLISH_SERVICE: https://datasource-soda-worker-dot-tf-admin-aabm0pul.appspot.com/publish
-  DATASOURCE_SODA_URI: https://data.cityofchicago.org/resource/8v9j-bter
-  DATADOG_API_KEY: '35976cc80ec87e62b9ba7784794edcb8719d88cc'
+  CASSANDRA_SERVICE: https://pubsub2cassandra-worker-dot-tf-admin-aabm0pul.appspot.com/push
 
 # Standat environment:
 #api_version: go1
@@ -15,8 +14,8 @@ env_variables:
 #  script: _go_app
 #
 #automatic_scaling:
-#  target_cpu_utilization: 0.6
-#  max_instances: 5
+#  target_cpu_utilization: 0.75
+#  max_instances: 4
 #  min_instances: 1
 
 # FLEX environment
@@ -30,4 +29,4 @@ automatic_scaling:
   max_num_instances: 5
   cool_down_period_sec: 60
   cpu_utilization:
-    target_utilization: 0.6
+    target_utilization: 0.5

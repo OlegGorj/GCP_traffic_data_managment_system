@@ -12,10 +12,13 @@ import (
   _ "html/template"
   "os"
   "sync"
+	_ "time"
   b64 "encoding/base64"
 	"google.golang.org/appengine"
   "cloud.google.com/go/pubsub"
 	"github.com/gocql/gocql"
+
+	"github.com/newrelic/go-agent"
 )
 
 var (
@@ -37,8 +40,17 @@ func main() {
 	sPassword = getENV("CASSANDRA_UPASS")
 	sHost = getENV("CASSANDRA_HOST")
 
+	//  newrelic part
+	config := newrelic.NewConfig("cassandra-service", "df553dd04a541579cffd9a3a60c7afa9ca692cc7")
+	app, err := newrelic.NewApplication(config)
+	if err != nil {
+    log.Printf("ERROR: Issue with initializing newrelic application ")
+	}
+
 	http.HandleFunc("/_ah/health", healthCheckHandler)
-  http.HandleFunc("/push", pushHandler)
+  //http.HandleFunc("/push", pushHandler)
+	http.HandleFunc(newrelic.WrapHandleFunc(app, "/push", pushHandler))
+
   http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "This is main entry for endpoints..")
 	})
@@ -101,14 +113,16 @@ func pushHandler(w http.ResponseWriter, r *http.Request) {
   //log.Printf("DEBUG:  >>>>>  body: %s \n", string(body))
   //log.Printf("DEBUG:  >>>>>  messageId: "    + msg.Message.messageId + "\n")
   sDec, _  := b64.StdEncoding.DecodeString( msg.Message.Data )
-
   //log.Printf("DEBUG:  >>>>> Message.Data:" + string(sDec) + "\n")
   var data entityEntryJSONStruct
   if err := json.Unmarshal(sDec, &data); err != nil {
     log.Printf("ERROR: Could not decode Message.Data into Entry type with Unmarshal: " + string(sDec) + "\n")
   }
 
-	cassandraHandler(w, r, data)
+	//go func() {
+		cassandraWriter(w, r, data)
+	//}()
+
 
 	w.WriteHeader(http.StatusOK)
 	io.WriteString(w, "{\"status\":\"0\", \"message\":\"ok\"}")
@@ -123,37 +137,65 @@ func getENV(k string) string {
 }
 
 //-----------------------------------------------------------------------------------------------
-func cassandraHandler(w http.ResponseWriter, r *http.Request, e entityEntryJSONStruct) {
+var thesession *gocql.Session
 
-  const cConsistency gocql.Consistency = gocql.One
-	//log.Printf("INFO: sHost: "+ sHost + "\n")
-	//log.Printf("INFO: e.Street : "+ e.Street  + "\n")
+func initSession() error {
+    var err error
+    if thesession == nil || thesession.Closed() {
+        thesession, err = getCluster().CreateSession()
+    }
+    return err
+}
 
-	cluster := gocql.NewCluster(sHost)
-  cluster.Authenticator = gocql.PasswordAuthenticator{
-		Username: sUsername,
-		Password: sPassword,
-	}
-	cluster.Keyspace = datasetKeyspace
-	cluster.Consistency = cConsistency
-	session, err := cluster.CreateSession()
+func getCluster() *gocql.ClusterConfig {
+     cluster := gocql.NewCluster(sHost)
+     cluster.Keyspace = datasetKeyspace
+		 cluster.NumConns = 1
+	   cluster.Authenticator = gocql.PasswordAuthenticator{
+	 		Username: sUsername,
+	 		Password: sPassword,
+	 	}
+     cluster.Consistency = gocql.One
+     cluster.Port = 9042   // default port
+     cluster.NumConns = 1
+     return cluster
+}
+
+func cassandraWriter(w http.ResponseWriter, r *http.Request, e entityEntryJSONStruct) {
+
+//  const cConsistency gocql.Consistency = gocql.One
+//	cluster := gocql.NewCluster(sHost)
+//	cluster.ProtoVersion = 4
+//	//cluster.RetryPolicy = &gocql.SimpleRetryPolicy{NumRetries:3}
+//	//cluster.Timeout = 2 * time.Second
+//	cluster.NumConns = 1
+//  cluster.Authenticator = gocql.PasswordAuthenticator{
+//		Username: sUsername,
+//		Password: sPassword,
+//	}
+//	//log.Println("INFO: sHost: ", sHost)
+//	cluster.Keyspace = datasetKeyspace
+//	cluster.Consistency = cConsistency
+
+//	session, err := cluster.CreateSession()
+	err := initSession()
 	if err != nil {
-		log.Printf("ERROR: Error creating session: ", err.Error() + "\n")
-		log.Fatalf("Error creating session: %s", err)
+		msg := "Error creating session: " + err.Error()
+		log.Printf(msg)
+		io.WriteString(w, "{\"status\":\"1\", \"message\":\""+ msg +"\"}")
+		log.Fatalf(msg)
 	}
+	defer thesession.Close()
 
-	err = session.Query(
+	err = thesession.Query(
 		`INSERT INTO northamerica.datasetentry (id, Direction, Fromst, Last_updt, Length, Lif_lat, Lit_lat, Lit_lon, Strheading, Tost, Traffic, Segmentid, Start_lon, Street) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		gocql.TimeUUID(), e.Direction, e.Fromst, e.Last_updt, e.Length, e.Lif_lat, e.Lit_lat, e.Lit_lon, e.Strheading, e.Tost, e.Traffic, e.Segmentid, e.Start_lon, e.Street ).Exec()
   if err != nil {
-		log.Printf("ERROR: Authentication error: ", err.Error() + "\n")
-		log.Fatalf("Authentication error: %s", err)
+		msg := "Error Authentication: " + err.Error()
+		io.WriteString(w, msg)
+		log.Printf(msg)
+		log.Fatalf(msg)
+		return
 	}
 
-	io.WriteString(w, "{\"status\":\"0\", \"message\":\"cassandra call ok\"}")
-
-  session.Close()
 }
-
-
-// eof

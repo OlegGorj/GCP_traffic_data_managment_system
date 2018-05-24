@@ -18,6 +18,8 @@ import (
   "golang.org/x/net/context"
 	"google.golang.org/appengine"
 	"google.golang.org/api/iterator"
+
+	"github.com/newrelic/go-agent"
 )
 
 var (
@@ -28,8 +30,16 @@ func main() {
 
 	projectName = getENV("GOOGLE_CLOUD_PROJECT")
 
+	//  newrelic part
+	config := newrelic.NewConfig("publish-service", "df553dd04a541579cffd9a3a60c7afa9ca692cc7")
+	app, err := newrelic.NewApplication(config)
+	if err != nil {
+    log.Printf("ERROR: Issue with initializing newrelic application ")
+	}
+
 	http.HandleFunc("/_ah/health", healthCheckHandler)
-	http.HandleFunc("/publish", publishHandler)
+	//http.HandleFunc("/publish", publishHandler)
+	http.HandleFunc(newrelic.WrapHandleFunc(app, "/publish", publishHandler))
 	log.Print("Starting service.....")
 	appengine.Main()
 
@@ -51,8 +61,13 @@ func publishHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
 
 	switch {
+		case r.Method == "GET":
+			w.WriteHeader(http.StatusOK)
+			io.WriteString(w, "{\"status\":\"0\", \"message\":\"method GET not supported\"}" )
 
 	  case r.Method == "POST":
+			io.WriteString(w, "Calling POST method...\n" )
+
 			if r.Body == nil {
 					errormsg := "ERROR: Please send a request body"
 			    log.Fatalf(errormsg + "%v", errormsg)
@@ -69,7 +84,11 @@ func publishHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			var msg publishEnvelope
 		  if err := json.Unmarshal([]byte(body), &msg); err != nil {
-		    log.Fatalf("ERROR: Could not decode body into publishEnvelope with Unmarshal: %s \n", string(body))
+				w.WriteHeader(http.StatusOK)
+				msg := "ERROR: Could not decode body into publishEnvelope with Unmarshal: %s \n" + string(body) + "\n Error: " + err.Error()
+				io.WriteString(w, msg)
+		    log.Fatalf(msg)
+				return
 		  }
 			jsondata, _ := json.Marshal(msg.Data)
 			//log.Printf("DEBUG: Topic from envelope: "    + msg.Topic + "\n Data-json from envelope"    + string(jsondata) + "\n")
@@ -77,17 +96,17 @@ func publishHandler(w http.ResponseWriter, r *http.Request) {
 			if topicName == "" {
 				log.Fatalf("ERROR: Topic name is empty")
 			}
-
-			// publish to topic
-			// log.Print("DEBUG: Calling PUB service at project " + projectName)
-			client, err := pubsub.NewClient(ctx, projectName)
-			if err != nil {
-				log.Fatalf("Could not create pubsub Client:" + err.Error() + "for project" + projectName)
-			}
-
-			if err := publish(client, topicName, string(jsondata) ); err != nil {
-				log.Fatalf("Failed to publish: %v. Topic name: %s\n", err, topicName)
-			}
+			go func() {
+				// publish to topic
+				log.Print("DEBUG: Calling PUB service at project " + projectName)
+				client, err := pubsub.NewClient(ctx, projectName)
+				if err != nil {
+					log.Fatalf("Could not create pubsub Client:" + err.Error() + "for project" + projectName)
+				}
+				if err := publish(client, topicName, string(jsondata) ); err != nil {
+					log.Fatalf("Failed to publish: %v. Topic name: %s\n", err, topicName)
+				}
+			}()
 
 	  default:
 	      http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
