@@ -1,19 +1,23 @@
 # Common part
-service: publish-worker
+service: pubsub2cassandra-worker
 runtime: go
+
 env_variables:
   GOOGLE_CLOUD_PROJECT: tf-admin-aabm0pul
-  PUBSUB_TOPIC: us.chicago-city.transportation.traffic-tracker-congestion-estimates
+  CASSANDRA_HOST: 35.203.13.206
+  CASSANDRA_UNAME: cassandra
+  CASSANDRA_UPASS: Password32
+  CASSANDRA_KEYSPACE: northamerica
 
 # Standat environment:
 #api_version: go1
+#env: standard
 #handlers:
 #- url: /.*
 #  script: _go_app
-#
 #automatic_scaling:
-#  target_cpu_utilization: 0.5
-#  max_instances: 4
+#  target_cpu_utilization: 0.6
+#  max_instances: 25
 #  min_instances: 1
 
 # FLEX environment
@@ -22,9 +26,12 @@ resources:
   cpu: .5
   memory_gb: 1.3
   disk_size_gb: 10
+network:
+  name: shared-network
+  instance_tag: cassandraclient-instance
 automatic_scaling:
   min_num_instances: 1
   max_num_instances: 5
   cool_down_period_sec: 60
   cpu_utilization:
-    target_utilization: 0.6
+    target_utilization: 0.5
