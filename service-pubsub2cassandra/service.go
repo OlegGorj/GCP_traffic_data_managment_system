@@ -12,8 +12,8 @@ import (
   _ "html/template"
   "os"
   "sync"
-	_ "time"
-  b64 "encoding/base64"
+	"time"
+  _ "encoding/base64"
 	"google.golang.org/appengine"
   "cloud.google.com/go/pubsub"
 	"github.com/gocql/gocql"
@@ -48,7 +48,6 @@ func main() {
 	}
 
 	http.HandleFunc("/_ah/health", healthCheckHandler)
-  //http.HandleFunc("/push", pushHandler)
 	http.HandleFunc(newrelic.WrapHandleFunc(app, "/push", pushHandler))
 
   http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -106,23 +105,25 @@ func pushHandler(w http.ResponseWriter, r *http.Request) {
     log.Printf("INFO:  Can't read http body ioutil.ReadAll... ")
 		return
 	}
-  var msg pushRequest
-  if err := json.Unmarshal([]byte(body), &msg); err != nil {
-    log.Printf("ERROR: Could not decode body with Unmarshal: %s \n", string(body))
-  }
+  //var msg pushRequest
+  //if err := json.Unmarshal([]byte(body), &msg); err != nil {
+  //  log.Printf("ERROR: Could not decode body with Unmarshal: %s \n", string(body))
+  //}
   //log.Printf("DEBUG:  >>>>>  body: %s \n", string(body))
   //log.Printf("DEBUG:  >>>>>  messageId: "    + msg.Message.messageId + "\n")
-  sDec, _  := b64.StdEncoding.DecodeString( msg.Message.Data )
+  // sDec, _  := b64.StdEncoding.DecodeString( msg.Message.Data )
   //log.Printf("DEBUG:  >>>>> Message.Data:" + string(sDec) + "\n")
+
+	log.Printf("DEBUG:  >>>>>  body: %s \n", string(body))
+
   var data entityEntryJSONStruct
-  if err := json.Unmarshal(sDec, &data); err != nil {
-    log.Printf("ERROR: Could not decode Message.Data into Entry type with Unmarshal: " + string(sDec) + "\n")
+  if err := json.Unmarshal(body /*sDec*/, &data); err != nil {
+		errmsg := "ERROR: Could not decode Message.Data into Entry type with Unmarshal: " + string(body)
+    log.Printf(errmsg + "\n")
+		io.WriteString(w, "{\"status\":\"1\", \"message\":\"" + errmsg + "\"}")
   }
 
-	//go func() {
-		cassandraWriter(w, r, data)
-	//}()
-
+	cassandraWriter(w, r, data)
 
 	w.WriteHeader(http.StatusOK)
 	io.WriteString(w, "{\"status\":\"0\", \"message\":\"ok\"}")
@@ -150,14 +151,14 @@ func initSession() error {
 func getCluster() *gocql.ClusterConfig {
      cluster := gocql.NewCluster(sHost)
      cluster.Keyspace = datasetKeyspace
-		 cluster.NumConns = 1
+		 cluster.Timeout = 3 * time.Second
+		 cluster.NumConns = 16
 	   cluster.Authenticator = gocql.PasswordAuthenticator{
 	 		Username: sUsername,
 	 		Password: sPassword,
 	 	}
      cluster.Consistency = gocql.One
      cluster.Port = 9042   // default port
-     cluster.NumConns = 1
      return cluster
 }
 
@@ -183,7 +184,7 @@ func cassandraWriter(w http.ResponseWriter, r *http.Request, e entityEntryJSONSt
 		msg := "Error creating session: " + err.Error()
 		log.Printf(msg)
 		io.WriteString(w, "{\"status\":\"1\", \"message\":\""+ msg +"\"}")
-		log.Fatalf(msg)
+		//log.Fatalf(msg)
 	}
 	defer thesession.Close()
 
@@ -194,7 +195,7 @@ func cassandraWriter(w http.ResponseWriter, r *http.Request, e entityEntryJSONSt
 		msg := "Error Authentication: " + err.Error()
 		io.WriteString(w, msg)
 		log.Printf(msg)
-		log.Fatalf(msg)
+		//log.Fatalf(msg)
 		return
 	}
 

@@ -29,7 +29,7 @@ var (
 
 //
 // endpoint
-// /us/il/chicago/trafficservices/
+// /us/il/chicago/Transportation/Chicago-Traffic-Tracker-Congestion-Estimates-by-Segment/
 //
 
 func main() {

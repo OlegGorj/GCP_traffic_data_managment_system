@@ -8,11 +8,11 @@ import (
   "io/ioutil"
   "encoding/json"
   _ "strconv"
-  _ "html"
+  "time"
   _ "html/template"
   "os"
   "sync"
-  _ "encoding/base64"
+  b64 "encoding/base64"
 	"bytes"
 
 	"google.golang.org/appengine"
@@ -37,7 +37,7 @@ func main() {
 
 	http.HandleFunc("/_ah/health", healthCheckHandler)
 
-	config1 := newrelic.NewConfig("publish-service", "df553dd04a541579cffd9a3a60c7afa9ca692cc7")
+	config1 := newrelic.NewConfig("subscription-push-service", "df553dd04a541579cffd9a3a60c7afa9ca692cc7")
 	app1, err1 := newrelic.NewApplication(config1)
 	if err1 != nil {
     log.Printf("ERROR: Issue with initializing newrelic application ")
@@ -87,7 +87,7 @@ func pushHandler(w http.ResponseWriter, r *http.Request) {
   if err := json.Unmarshal([]byte(body), &msg); err != nil {
     log.Printf("ERROR: Could not decode body with Unmarshal: %s \n", string(body))
   }
-  //sDec, _  := b64.StdEncoding.DecodeString( msg.Message.Data )
+  sDec, _  := b64.StdEncoding.DecodeString( msg.Message.Data )
   //var data entityEntryJSONStruct
   //if err := json.Unmarshal(sDec, &data); err != nil {
   //  log.Printf("ERROR: Could not decode Message.Data into Entry type with Unmarshal: " + string(sDec) + "\n")
@@ -95,17 +95,21 @@ func pushHandler(w http.ResponseWriter, r *http.Request) {
 
 	func (){
 		// calling cassandra service
-		//log.Print("DEBUG: Calling pub service at  " + pubServiceUri + "with the payload: \n" + json_full + "\n")
-		rsp, err := http.Post(datastoreServiceUri, "application/json", bytes.NewBuffer(body))
+
+		log.Print("DEBUG: Calling pub service at  " + datastoreServiceUri + "with the payload: \n" + string(sDec) + "\n")
+
+		c := &http.Client{
+	    Timeout: 60 * time.Second,
+		}
+		rsp, err := c.Post(datastoreServiceUri, "application/json", bytes.NewBuffer(sDec))
 		defer rsp.Body.Close()
 		body_byte, err := ioutil.ReadAll(rsp.Body)
 		if err != nil { panic(err) }
-		log.Print("INFO: Response from cassandra service ("+ datastoreServiceUri +"): " + string(body_byte) + "\n\n")
+		log.Print("DEBUG: Response from cassandra service ("+ datastoreServiceUri +"): " + string(body_byte) + "\n\n")
 	}()
 
 	w.WriteHeader(http.StatusOK)
 	io.WriteString(w, "{\"status\":\"0\", \"message\":\"ok\"}")
-
 }
 
 func getENV(k string) string {
