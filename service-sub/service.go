@@ -35,19 +35,17 @@ var (
 func main() {
 	datastoreServiceUri = getENV("CASSANDRA_SERVICE")
 
-	http.HandleFunc("/_ah/health", healthCheckHandler)
-
 	config1 := newrelic.NewConfig("subscription-push-service", "df553dd04a541579cffd9a3a60c7afa9ca692cc7")
 	app1, err1 := newrelic.NewApplication(config1)
 	if err1 != nil {
     log.Printf("ERROR: Issue with initializing newrelic application ")
 	}
 	http.HandleFunc(newrelic.WrapHandleFunc(app1, "/push", pushHandler))
+	http.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler))
 
   http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "This is main entry for endpoints..")
 	})
-
 	log.Print("Starting service.....")
 	appengine.Main()
 }
@@ -64,11 +62,9 @@ type pushRequest struct {
     Subscription string
 }
 
-
 func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "ok")
 }
-
 
 func pushHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")

@@ -46,9 +46,9 @@ func main() {
     log.Printf("ERROR: Issue with initializing newrelic application ")
 	}
 
-	http.HandleFunc("/_ah/health", healthCheckHandler)
-	//http.HandleFunc("/soda_pull_service", pullSODADataHandler)
 	http.HandleFunc(newrelic.WrapHandleFunc(app, "/soda_pull_service", pullSODADataHandler))
+	http.HandleFunc(newrelic.WrapHandleFunc(app, "/schedule", scheduleHandler))
+	http.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler))
 
 	//  newrelic part
 	config1 := newrelic.NewConfig("publish-service", "df553dd04a541579cffd9a3a60c7afa9ca692cc7")
@@ -67,6 +67,11 @@ func main() {
 func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "ok")
 }
+
+func scheduleHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, "ok")
+}
+
 
 func pullSODADataHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")

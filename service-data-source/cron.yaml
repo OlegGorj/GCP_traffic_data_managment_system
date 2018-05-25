@@ -1,9 +1,8 @@
 # cron.yaml
 cron:
-- description: "retry demo"
-  url: /retry
-#  url: /soda_pull_service
-  schedule: every 2 mins
+- description: "check data with 5 mins intervals"
+  url: /schedule
+  schedule: every 5 mins
   retry_parameters:
     min_backoff_seconds: 2.5
     max_doublings: 5

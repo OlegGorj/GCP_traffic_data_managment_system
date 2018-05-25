@@ -47,9 +47,8 @@ func main() {
     log.Printf("ERROR: Issue with initializing newrelic application ")
 	}
 
-	http.HandleFunc("/_ah/health", healthCheckHandler)
+	http.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler))
 	http.HandleFunc(newrelic.WrapHandleFunc(app, "/push", pushHandler))
-
   http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "This is main entry for endpoints..")
 	})
