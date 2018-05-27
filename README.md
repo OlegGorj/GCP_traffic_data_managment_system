@@ -1,4 +1,4 @@
-# GCP_traffic_data_managment_system
+# Google cloud traffic data management system
 
 [![GitHub Issues](https://img.shields.io/github/issues/OlegGorJ/GCP_traffic_data_managment_system.svg)](https://github.com/OlegGorJ/GCP_traffic_data_managment_system/issues)
 [![Average time to resolve an issue](http://isitmaintained.com/badge/resolution/OlegGorJ/GCP_traffic_data_managment_system.svg)](http://isitmaintained.com/project/OlegGorJ/GCP_traffic_data_managment_system "Average time to resolve an issue")
