@@ -81,7 +81,7 @@ func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 
 func scheduleHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "ok")
-}	log.Print("scheduleHandler called..")
+	log.Print("scheduleHandler called..")
 }
 
 

@@ -13,7 +13,7 @@ gcloud alpha pubsub topics create ${SESSIONS_TOPIC_NAME}
 
 gcloud alpha pubsub subscriptions create ${SUB_PUSH2DATASTORE} \
      --topic ${TOPIC_NAME} \
-     --push-endpoint https://save2datastore-worker-dot-tf-admin-aabm0pul.appspot.com/push \
+     --push-endpoint https://push-subscription-worker-dot-tf-admin-aabm0pul.appspot.com/push/cassandra \
      --ack-deadline 30
 
 # create subscription to pull ??
