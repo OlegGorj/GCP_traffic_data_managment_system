@@ -10,12 +10,14 @@ import (
 	"encoding/json"
 	"bytes"
 	"io/ioutil"
+	"time"
 
 	"google.golang.org/appengine"
 	_ "google.golang.org/appengine/log"
 
 	"cloud.google.com/go/pubsub"
   "golang.org/x/net/context"
+	"github.com/gocql/gocql"
 
 	"github.com/newrelic/go-agent"
 )
@@ -25,7 +27,16 @@ var (
 	sourceSODAUri string
 	publishTopic string
 	projectName string
+	sessionsTopic string
 )
+
+type sessionStruct struct {
+		Id string `json:"id"`
+    RunTS string `json:"run_ts"`
+		Topic string `json:"topic"`
+		Status string `json:"status"`
+		Counter int `json:"counter"`
+}
 
 //
 // endpoint
@@ -37,6 +48,7 @@ func main() {
 	pubServiceUri = getENV("PUBLISH_SERVICE")
 	sourceSODAUri = getENV("DATASOURCE_SODA_URI")
 	publishTopic = getENV("PUBSUB_TOPIC")
+	sessionsTopic = getENV("SESSIONS_TOPIC")
 	projectName = getENV("GOOGLE_CLOUD_PROJECT")
 
 	//  newrelic part
@@ -69,17 +81,60 @@ func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func scheduleHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, "ok")
+	log.Print("scheduleHandler called..")
+}
+
+
+func recordSession(t time.Time, status string, topic string, counts int) int {
+	session_id := gocql.TimeUUID()
+	// construct session
+	session := &sessionStruct{
+		Id: session_id.String(),
+		Status: status,
+		RunTS: t.String(),
+		Topic: topic,
+		Counter: counts,
+	}
+	sessionStr, _ := json.Marshal(session)
+
+	log.Print("DEBUG: sessionStr: " + string(sessionStr))
+
+	// publish session
+	go func() {
+		log.Print("DEBUG: Calling PUB service at project " + projectName)
+
+		ctx := context.Background()
+		client, err := pubsub.NewClient(ctx, projectName)
+		if err != nil {
+			log.Fatalf("Could not create pubsub Client:" + err.Error() + "for project" + projectName)
+			return
+		}
+		t := client.Topic(topic)
+		result := t.Publish( ctx, &pubsub.Message{Data: []byte(sessionStr)} )
+		id, err := result.Get(ctx)
+		if err != nil {
+			log.Print("ERROR: could not get published message ID from PUBSUB: " + err.Error() + "\n")
+			return
+		}
+		log.Print("DEBUG: Published session; msg ID: " + id + "\n")
+	}()
+
+	return 0
 }
 
 
 func pullSODADataHandler(w http.ResponseWriter, r *http.Request) {
+	var recordsCounter int
+	//var succesFlag bool
+
 	w.Header().Set("Content-Type", "application/json")
-	log.Print("pullSODADataHandler Method called\n")
+	//log.Print("pullSODADataHandler Method called\n")
+
+	recordSession(time.Now(), "Ok", sessionsTopic, recordsCounter)
 
 	sodareq := soda.NewGetRequest(sourceSODAUri, "")
 	sodareq.Format = "json"
-	sodareq.Query.Limit = 10
+	//sodareq.Query.Limit = 10
   sodareq.Query.AddOrder("_last_updt", soda.DirAsc)
 
   ogr, err := soda.NewOffsetGetRequest(sodareq)
@@ -92,7 +147,7 @@ func pullSODADataHandler(w http.ResponseWriter, r *http.Request) {
   for i := 0; i < 14; i++ {
 		ogr.Add(1)
 		go func() {
-			  defer ogr.Done()
+			defer ogr.Done()
 
 			for ;; {
 				resp, err := ogr.Next(1)
@@ -106,6 +161,8 @@ func pullSODADataHandler(w http.ResponseWriter, r *http.Request) {
 
 				//Process the data
         for _, r := range results {
+					// increase counter
+					recordsCounter++
 
 					// contruct message envelope
 					json_data := fmt.Sprintf(
@@ -118,9 +175,11 @@ func pullSODADataHandler(w http.ResponseWriter, r *http.Request) {
 					//log.Print("DEBUG: Calling pub service at  " + pubServiceUri + "with the payload: \n" + json_full + "\n")
 					rsp, err := http.Post(pubServiceUri, "application/json", bytes.NewBufferString(json_full))
 					defer rsp.Body.Close()
-					body_byte, err := ioutil.ReadAll(rsp.Body)
-					if err != nil { panic(err) }
-					log.Print("INFO: Response from pub service ("+ pubServiceUri +"): " + string(body_byte) + "\n\n")
+					/*body_byte*/ _, err = ioutil.ReadAll(rsp.Body)
+					if err != nil {
+						panic(err)
+					}
+					//log.Print("INFO: Response from pub service ("+ pubServiceUri +"): " + string(body_byte) + "\n\n")
       	}
 
 			}
@@ -128,6 +187,8 @@ func pullSODADataHandler(w http.ResponseWriter, r *http.Request) {
 
 	}
 	ogr.Wait()
+
+	recordSession(time.Now(), "Ok", sessionsTopic, recordsCounter)
 
 	w.WriteHeader(http.StatusOK)
 	io.WriteString(w, "{\"status\":\"0\", \"message\":\"ok\"}" )
@@ -163,7 +224,6 @@ func publishHandler(w http.ResponseWriter, r *http.Request) {
 			io.WriteString(w, "{\"status\":\"0\", \"message\":\"method GET not supported\"}" )
 
 	  case r.Method == "POST":
-			io.WriteString(w, "Calling POST method...\n" )
 
 			if r.Body == nil {
 					errormsg := "ERROR: Please send a request body"
@@ -195,7 +255,7 @@ func publishHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			go func() {
 				// publish to topic
-				log.Print("DEBUG: Calling PUB service at project " + projectName)
+				//log.Print("DEBUG: Calling PUB service at project " + projectName)
 				client, err := pubsub.NewClient(ctx, projectName)
 				if err != nil {
 					log.Fatalf("Could not create pubsub Client:" + err.Error() + "for project" + projectName)
@@ -223,9 +283,12 @@ func publish(client *pubsub.Client, topic, msg string) error {
 	// Block until the result is returned and a server-generated
 	// ID is returned for the published message.
 	id, err := result.Get(ctx)
-	if err != nil { return err }
+	if err != nil {
+		log.Print("ERROR: could not get published message ID from PUBSUB: " + err.Error() + "\n")
+		return err
+	}
 
-	log.Print("Published a message; msg ID: " + id + "\n")
+	log.Print("DEBUG: Published a message; msg ID: " + id + "\n")
 
 	return nil
 }

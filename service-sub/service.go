@@ -18,7 +18,6 @@ import (
 	"google.golang.org/appengine"
 
   "cloud.google.com/go/pubsub"
-	_ "google.golang.org/appengine"
   _ "golang.org/x/net/context"
 
 	"github.com/newrelic/go-agent"

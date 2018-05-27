@@ -1,5 +1,16 @@
 
 CREATE  KEYSPACE IF NOT EXISTS NorthAmerica WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };
+CREATE  KEYSPACE IF NOT EXISTS common WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };
+
+// data receive sessions
+create table common.sessions(
+  id UUID,          // id of the session
+  run_ts timestamp, // time of execution
+  topic text,       //
+  status text,      // failed/complete
+  events_counter int, 
+  PRIMARY KEY(id) );
+
 
 // Catalog
 create table northamerica.catalog(
@@ -19,6 +30,7 @@ CREATE INDEX IF NOT EXISTS catalog_state on northamerica.catalog(state);
 // Category
 create table northamerica.category(
   id UUID,
+  catalog_id UUID,
   type text,
   PRIMARY KEY(id) );
 
@@ -28,6 +40,7 @@ CREATE INDEX IF NOT EXISTS category_type on northamerica.category(type);
 // Dataset
 create table northamerica.dataset(
   id UUID,
+  category_id UUID,
   created text,
   description text,
   name text,
@@ -45,6 +58,8 @@ CREATE INDEX IF NOT EXISTS dataset_updated on northamerica.dataset(updated);
 // Entry
 create table northamerica.datasetentry(
   id UUID,
+  dataset_id UUID,
+  session_id UUID,
   direction text,
   fromst text,
   last_updt text,
