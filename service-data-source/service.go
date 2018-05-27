@@ -50,26 +50,25 @@ func main() {
 	publishTopic = getENV("PUBSUB_TOPIC")
 	sessionsTopic = getENV("SESSIONS_TOPIC")
 	projectName = getENV("GOOGLE_CLOUD_PROJECT")
+	newrelicKey := getENV("NEWRELIC_KEY")
 
 	//  newrelic part
-	config := newrelic.NewConfig("datasource-soda-service", "df553dd04a541579cffd9a3a60c7afa9ca692cc7")
+	config := newrelic.NewConfig("datasource-soda-service", newrelicKey)
 	app, err := newrelic.NewApplication(config)
 	if err != nil {
     log.Printf("ERROR: Issue with initializing newrelic application ")
 	}
-
 	http.HandleFunc(newrelic.WrapHandleFunc(app, "/soda_pull_service", pullSODADataHandler))
 	http.HandleFunc(newrelic.WrapHandleFunc(app, "/schedule", scheduleHandler))
 	http.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler))
 
 	//  newrelic part
-	config1 := newrelic.NewConfig("publish-service", "df553dd04a541579cffd9a3a60c7afa9ca692cc7")
+	config1 := newrelic.NewConfig("publish-service", newrelicKey)
 	app1, err1 := newrelic.NewApplication(config1)
 	if err1 != nil {
     log.Printf("ERROR: Issue with initializing newrelic application ")
 	}
 	http.HandleFunc(newrelic.WrapHandleFunc(app1, "/publish", publishHandler))
-
 
 	log.Print("Starting service.....")
 	appengine.Main()
@@ -128,7 +127,6 @@ func pullSODADataHandler(w http.ResponseWriter, r *http.Request) {
 	//var succesFlag bool
 
 	w.Header().Set("Content-Type", "application/json")
-	//log.Print("pullSODADataHandler Method called\n")
 
 	recordSession(time.Now(), "Ok", sessionsTopic, recordsCounter)
 
@@ -139,7 +137,9 @@ func pullSODADataHandler(w http.ResponseWriter, r *http.Request) {
 
   ogr, err := soda.NewOffsetGetRequest(sodareq)
 	if err != nil {
-		io.WriteString(w, "{\"status\":\"1\", \"" + "SODA call failed: " + err.Error() + "\":\"ok\"}" )
+		errmsg := "{\"status\":\"1\", \"" + "SODA call failed: " + err.Error() + "\":\"ok\"}"
+		recordSession(time.Now(), errmsg, sessionsTopic, 0)
+		io.WriteString(w, errmsg )
 		log.Fatalf("SODA call failed: %v",err)
 		return
 	}

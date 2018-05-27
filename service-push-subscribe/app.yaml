@@ -1,11 +1,12 @@
 
 # Common part
-service: subscription-worker
+service: push-subscription-worker
 runtime: go
 env_variables:
   GOOGLE_CLOUD_PROJECT: tf-admin-aabm0pul
   PUBSUB_TOPIC: us.chicago-city.transportation.traffic-tracker-congestion-estimates
   CASSANDRA_SERVICE: https://pubsub2cassandra-worker-dot-tf-admin-aabm0pul.appspot.com/push
+  NEWRELIC_KEY: 'df553dd04a541579cffd9a3a60c7afa9ca692cc7'
 
 # Standat environment:
 #api_version: go1

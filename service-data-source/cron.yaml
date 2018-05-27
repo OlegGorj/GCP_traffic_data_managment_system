@@ -1,8 +1,15 @@
 # cron.yaml
+# Google App Engine issues Cron requests from the IP address 0.1.0.1
 cron:
 - description: "check data with 5 mins intervals"
   url: /schedule
-  schedule: every 5 mins
+  target: datasource-soda-worker
+  schedule: every 5 minutes
   retry_parameters:
     min_backoff_seconds: 2.5
     max_doublings: 5
+
+- description: "health check"
+  url: /_ah/health
+  target: datasource-soda-worker
+  schedule: every 1 minutes
