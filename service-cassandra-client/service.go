@@ -39,16 +39,17 @@ func main() {
 	sUsername = getENV("CASSANDRA_UNAME")
 	sPassword = getENV("CASSANDRA_UPASS")
 	sHost = getENV("CASSANDRA_HOST")
+	newrelicKey := getENV("NEWRELIC_KEY")
 
 	//  newrelic part
-	config := newrelic.NewConfig("cassandra-service", "df553dd04a541579cffd9a3a60c7afa9ca692cc7")
+	config := newrelic.NewConfig("cassandra-service", newrelicKey)
 	app, err := newrelic.NewApplication(config)
 	if err != nil {
     log.Printf("ERROR: Issue with initializing newrelic application ")
 	}
 
 	http.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler))
-	http.HandleFunc(newrelic.WrapHandleFunc(app, "/push", pushHandler))
+	http.HandleFunc(newrelic.WrapHandleFunc(app, "/insert/{keyspace}/{table}", pushHandler))
   http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "This is main entry for endpoints..")
 	})
