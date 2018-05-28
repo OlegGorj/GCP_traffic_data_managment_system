@@ -27,11 +27,15 @@ var (
   countMu sync.Mutex
 	count   int
   subscription *pubsub.Subscription
-	datastoreServiceUri string
+	cassandraServiceUri string
+	trafficTrackingTopic string
+	sessionsTopic string
 )
 
 func main() {
-	datastoreServiceUri = getENV("CASSANDRA_SERVICE")
+	cassandraServiceUri = getENV("CASSANDRA_SERVICE")
+	trafficTrackingTopic = getENV("TRAFFIC_TRACKER_TOPIC")
+	sessionsTopic = getENV("SESSIONS_TOPIC")
 	newrelicKey := getENV("NEWRELIC_KEY")
 
 	config := newrelic.NewConfig("subscription-push-service", newrelicKey)
@@ -94,6 +98,11 @@ func pushHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type publishEnvelope struct {
+	Topic string  `json:"topic"`
+	Data map[string]string `json:"data"`
+}
+
 func pushCassandraHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
@@ -114,26 +123,45 @@ func pushCassandraHandler(w http.ResponseWriter, r *http.Request) {
   }
   sDec, _  := b64.StdEncoding.DecodeString( msg.Message.Data )
 
+	// Unmarshal the envelope
+	var msg_envelope publishEnvelope
+  if err := json.Unmarshal([]byte(sDec), &msg_envelope); err != nil {
+		w.WriteHeader(http.StatusOK)
+		errmsg := "ERROR: Could not decode body into publishEnvelope with Unmarshal: %s \n" + string(sDec) + "\n Error: " + err.Error()
+		io.WriteString(w, errmsg)
+    log.Fatalf(errmsg)
+		return
+  }
+
 	// calling cassandra service
-	callCassandraClientService(sDec)
+	callCassandraClientService(msg_envelope.Topic, msg_envelope.Data)
 
 
 	w.WriteHeader(http.StatusOK)
 	io.WriteString(w, "{\"status\":\"0\", \"message\":\"ok\"}")
 }
 
-func callCassandraClientService(sDec []byte){
+func callCassandraClientService(topic string, sDec string){
 
-	log.Print("DEBUG: Calling pub service at  " + datastoreServiceUri + "with the payload: \n" + string(sDec) + "\n")
+	log.Print("DEBUG: Calling pub service at  " + cassandraServiceUri + "with the payload: \n" + string(sDec) + "\n")
 
 	c := &http.Client{
    Timeout: 60 * time.Second,
 	}
-	rsp, err := c.Post(datastoreServiceUri, "application/json", bytes.NewBuffer(sDec))
+	serviceUri := cassandraServiceUri
+	if topic == trafficTrackingTopic {
+		serviceUri = cassandraServiceUri + "/northamerica/datasetentry"
+	}else if topic == sessionsTopic {
+		serviceUri = cassandraServiceUri + "/common/sessions"
+	}else {
+		log.Print("ERROR: Unsuppoerted value of key \"topic\" in envelope\n\n")
+		return
+	}
+	rsp, err := c.Post(cassandraServiceUri, "application/json", bytes.NewBuffer(sDec))
 	defer rsp.Body.Close()
 	body_byte, err := ioutil.ReadAll(rsp.Body)
 	if err != nil { panic(err) }
-	log.Print("DEBUG: Response from cassandra service ("+ datastoreServiceUri +"): " + string(body_byte) + "\n\n")
+	log.Print("DEBUG: Response from cassandra service ("+ cassandraServiceUri +"): " + string(body_byte) + "\n\n")
 
 }
 

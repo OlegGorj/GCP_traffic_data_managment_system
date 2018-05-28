@@ -1,7 +1,8 @@
 #!/bin/bash
 SESSIONS_TOPIC_NAME="common.sessions"
 TOPIC_NAME="us.chicago-city.transportation.traffic-tracker-congestion-estimates"
-SUB_PUSH2DATASTORE="push-to-cassandra"
+SUB_PUSH2CASSANDRA="push-to-cassandra.us.chicago-city.transportation.traffic-tracker-congestion-estimates"
+SUB_PUSH2CASSANDRA_SESSIONS="push-to-cassandra.common.sessions"
 
 # TODO: check if exist
 gcloud alpha pubsub topics create ${TOPIC_NAME}
@@ -13,6 +14,11 @@ gcloud alpha pubsub topics create ${SESSIONS_TOPIC_NAME}
 
 gcloud alpha pubsub subscriptions create ${SUB_PUSH2DATASTORE} \
      --topic ${TOPIC_NAME} \
+     --push-endpoint https://push-subscription-worker-dot-tf-admin-aabm0pul.appspot.com/push/cassandra \
+     --ack-deadline 30
+
+gcloud alpha pubsub subscriptions create ${SUB_PUSH2CASSANDRA_SESSIONS} \
+     --topic ${SESSIONS_TOPIC_NAME} \
      --push-endpoint https://push-subscription-worker-dot-tf-admin-aabm0pul.appspot.com/push/cassandra \
      --ack-deadline 30
 

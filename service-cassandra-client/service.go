@@ -234,7 +234,6 @@ func datasetentryCassandraWriter(w http.ResponseWriter, r *http.Request, keyspac
 		//log.Fatalf(msg)
 		return
 	}
-
 }
 
 func sessionsCassandraWriter(w http.ResponseWriter, r *http.Request, keyspace string, table string, body []byte ) {
