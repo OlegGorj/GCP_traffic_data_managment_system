@@ -204,14 +204,14 @@ func cassandraWriter(w http.ResponseWriter, r *http.Request, keyspace string, ta
 	}
 	defer thesession.Close()
 
-	formated_query := fmt.Sprintf("INSERT INTO %s.%s (id, Direction, Fromst, Last_updt, Length, Lif_lat, Lit_lat, Lit_lon, Strheading, Tost, Traffic, Segmentid, Start_lon, Street) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", keyspace, table)
-	log.Printf(formated_query)
-	io.WriteString(w, formated_query)
-
 	err = thesession.Query(
-		`INSERT INTO northamerica.datasetentry (id, Direction, Fromst, Last_updt, Length, Lif_lat, Lit_lat, Lit_lon, Strheading, Tost, Traffic, Segmentid, Start_lon, Street) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		fmt.Sprintf(
+			"INSERT INTO %s.%s (id, Direction, Fromst, Last_updt, Length, Lif_lat, Lit_lat, Lit_lon, Strheading, Tost, Traffic, Segmentid, Start_lon, Street) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			keyspace,
+			table),
 		gocql.TimeUUID(), e.Direction, e.Fromst, e.Last_updt, e.Length, e.Lif_lat, e.Lit_lat, e.Lit_lon, e.Strheading, e.Tost, e.Traffic, e.Segmentid, e.Start_lon, e.Street ).Exec()
-  if err != nil {
+
+	if err != nil {
 		msg := "Error Authentication: " + err.Error()
 		io.WriteString(w, msg)
 		log.Printf(msg)

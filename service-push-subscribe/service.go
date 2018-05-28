@@ -16,9 +16,8 @@ import (
 	"bytes"
 
 	"google.golang.org/appengine"
-
   "cloud.google.com/go/pubsub"
-  _ "golang.org/x/net/context"
+	"github.com/gorilla/mux"
 
 	"github.com/newrelic/go-agent"
 )
@@ -40,12 +39,15 @@ func main() {
 	if err != nil {
     log.Printf("ERROR: Issue with initializing newrelic application ")
 	}
-	http.HandleFunc(newrelic.WrapHandleFunc(app, "/push/cassandra", pushCassandraHandler))
-	http.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler))
+	//http.HandleFunc(newrelic.WrapHandleFunc(app, "/push/cassandra", pushCassandraHandler))
+	//http.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler))
 
-  http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "This is main entry for endpoints..")
-	})
+	r := mux.NewRouter()
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler))
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/push/{backend}", pushHandler))
+	r.HandleFunc("/", homeHandler)
+	http.Handle("/", r)
+
 	log.Print("Starting service.....")
 	appengine.Main()
 }
@@ -62,8 +64,34 @@ type pushRequest struct {
     Subscription string
 }
 
+func homeHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, "ok")
+}
+
 func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "ok")
+}
+
+func pushHandler(w http.ResponseWriter, r *http.Request) {
+
+	//vars := mux.Vars(r)
+	backend := mux.Vars(r)["backend"]
+	if backend == "" {
+		log.Printf("ERROR:  Can't have {backend} empty...\n")
+		return
+	}
+	switch backend {
+		case "cassandra":
+				pushCassandraHandler(w, r)
+
+		case "datastore":
+				log.Printf("ERROR:  Specified backend is not supported...\n")
+				return
+
+		default:
+				log.Printf("ERROR:  Specified backend is not supported...\n")
+				return
+	}
 }
 
 func pushCassandraHandler(w http.ResponseWriter, r *http.Request) {

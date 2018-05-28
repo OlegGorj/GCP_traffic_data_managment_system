@@ -8,7 +8,7 @@ create table common.sessions(
   run_ts timestamp, // time of execution
   topic text,       //
   status text,      // failed/complete
-  events_counter int, 
+  events_counter int,
   PRIMARY KEY(id) );
 
 
