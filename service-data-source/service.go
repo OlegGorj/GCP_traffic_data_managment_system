@@ -193,7 +193,6 @@ func pullSODADataHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	io.WriteString(w, "{\"status\":\"0\", \"message\":\"ok\"}" )
-
 }
 
 func constructEnvelope(topic, data string) string {

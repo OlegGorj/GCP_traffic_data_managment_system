@@ -113,28 +113,28 @@ func pushCassandraHandler(w http.ResponseWriter, r *http.Request) {
     log.Printf("ERROR: Could not decode body with Unmarshal: %s \n", string(body))
   }
   sDec, _  := b64.StdEncoding.DecodeString( msg.Message.Data )
-  //var data entityEntryJSONStruct
-  //if err := json.Unmarshal(sDec, &data); err != nil {
-  //  log.Printf("ERROR: Could not decode Message.Data into Entry type with Unmarshal: " + string(sDec) + "\n")
-  //}
 
-	func (){
-		// calling cassandra service
+	// calling cassandra service
+	callCassandraClientService(sDec)
 
-		log.Print("DEBUG: Calling pub service at  " + datastoreServiceUri + "with the payload: \n" + string(sDec) + "\n")
-
-		c := &http.Client{
-	    Timeout: 60 * time.Second,
-		}
-		rsp, err := c.Post(datastoreServiceUri, "application/json", bytes.NewBuffer(sDec))
-		defer rsp.Body.Close()
-		body_byte, err := ioutil.ReadAll(rsp.Body)
-		if err != nil { panic(err) }
-		log.Print("DEBUG: Response from cassandra service ("+ datastoreServiceUri +"): " + string(body_byte) + "\n\n")
-	}()
 
 	w.WriteHeader(http.StatusOK)
 	io.WriteString(w, "{\"status\":\"0\", \"message\":\"ok\"}")
+}
+
+func callCassandraClientService(sDec []byte){
+
+	log.Print("DEBUG: Calling pub service at  " + datastoreServiceUri + "with the payload: \n" + string(sDec) + "\n")
+
+	c := &http.Client{
+   Timeout: 60 * time.Second,
+	}
+	rsp, err := c.Post(datastoreServiceUri, "application/json", bytes.NewBuffer(sDec))
+	defer rsp.Body.Close()
+	body_byte, err := ioutil.ReadAll(rsp.Body)
+	if err != nil { panic(err) }
+	log.Print("DEBUG: Response from cassandra service ("+ datastoreServiceUri +"): " + string(body_byte) + "\n\n")
+
 }
 
 func getENV(k string) string {

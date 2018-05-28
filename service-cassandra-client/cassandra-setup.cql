@@ -5,7 +5,7 @@ CREATE  KEYSPACE IF NOT EXISTS common WITH REPLICATION = { 'class' : 'SimpleStra
 // data receive sessions
 create table common.sessions(
   id UUID,          // id of the session
-  run_ts timestamp, // time of execution
+  run_ts text,    // time of execution
   topic text,       //
   status text,      // failed/complete
   events_counter int,

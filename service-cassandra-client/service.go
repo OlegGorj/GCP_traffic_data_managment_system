@@ -72,7 +72,7 @@ type pushRequest struct {
     Subscription string
 }
 
-type entityEntryJSONStruct struct {
+type datasetentryStruct struct {
 	Direction string `json:"_direction"`
 	Fromst string `json:"_fromst"`
 	Last_updt string `json:"_last_updt"`
@@ -88,6 +88,13 @@ type entityEntryJSONStruct struct {
 	Street string `json:"street"`
 }
 
+type sessionStruct struct {
+		Id string `json:"id"`
+    RunTS string `json:"run_ts"`
+		Topic string `json:"topic"`
+		Status string `json:"status"`
+		Counter int `json:"counter"`
+}
 
 func homeHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "ok")
@@ -110,35 +117,52 @@ func insertHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vars := mux.Vars(r)
-	table := vars["table"]
-	kspace := vars["keyspace"]
+	table := mux.Vars(r)["table"]
+	kspace := mux.Vars(r)["keyspace"]
 	// making assumptions here - service passing table and keyspace is aware and passing correct ones
 	//  i.e. no error checking at this time (TODO)
 	if table == "" || kspace == "" {
 		log.Printf("ERROR:  Can't have table or keyspace empty...\n")
 		return
 	}
+	if kspace == "northamerica" {
 
-  //var msg pushRequest
-  //if err := json.Unmarshal([]byte(body), &msg); err != nil {
-  //  log.Printf("ERROR: Could not decode body with Unmarshal: %s \n", string(body))
-  //}
-  //log.Printf("DEBUG:  >>>>>  body: %s \n", string(body))
-  //log.Printf("DEBUG:  >>>>>  messageId: "    + msg.Message.messageId + "\n")
-  // sDec, _  := b64.StdEncoding.DecodeString( msg.Message.Data )
-  //log.Printf("DEBUG:  >>>>> Message.Data:" + string(sDec) + "\n")
+		switch table {
+			case "datasetentry":
+				datasetentryCassandraWriter(w, r, kspace, table, body)
 
-	//log.Printf("DEBUG:  >>>>>  body: %s \n", string(body))
+			case "catalog":
+					log.Printf("ERROR:  Specified table is not supported...yet..  \n")
+					return
 
-  var data entityEntryJSONStruct
-  if err := json.Unmarshal(body /*sDec*/, &data); err != nil {
-		errmsg := "ERROR: Could not decode Message.Data into Entry type with Unmarshal: " + string(body)
-    log.Printf(errmsg + "\n")
-		io.WriteString(w, "{\"status\":\"1\", \"message\":\"" + errmsg + "\"}")
-  }
+			case "category":
+					log.Printf("ERROR:  Specified table is not supported...yet..  \n")
+					return
 
-	cassandraWriter(w, r, kspace, table, data)
+			case "dataset":
+					log.Printf("ERROR:  Specified table is not supported...yet..  \n")
+					return
+
+			default:
+					log.Printf("ERROR:  Specified table is not supported...\n")
+					return
+		}
+
+	}else if kspace == "common" {
+
+		switch table {
+			case "sessions":
+				sessionsCassandraWriter(w, r, kspace, table, body)
+
+			default:
+					log.Printf("ERROR:  Specified table is not supported...\n")
+					return
+		}
+
+	}else {
+		log.Printf("ERROR:  Specified keyspace is not supported...\n")
+		return
+	}
 
 	w.WriteHeader(http.StatusOK)
 	io.WriteString(w, "{\"status\":\"0\", \"message\":\"ok\"}")
@@ -177,23 +201,15 @@ func getCluster() *gocql.ClusterConfig {
      return cluster
 }
 
-func cassandraWriter(w http.ResponseWriter, r *http.Request, keyspace string, table string, e entityEntryJSONStruct) {
+func datasetentryCassandraWriter(w http.ResponseWriter, r *http.Request, keyspace string, table string, body []byte/*e datasetentryStruct*/ ) {
 
-//  const cConsistency gocql.Consistency = gocql.One
-//	cluster := gocql.NewCluster(sHost)
-//	cluster.ProtoVersion = 4
-//	//cluster.RetryPolicy = &gocql.SimpleRetryPolicy{NumRetries:3}
-//	//cluster.Timeout = 2 * time.Second
-//	cluster.NumConns = 1
-//  cluster.Authenticator = gocql.PasswordAuthenticator{
-//		Username: sUsername,
-//		Password: sPassword,
-//	}
-//	//log.Println("INFO: sHost: ", sHost)
-//	cluster.Keyspace = datasetKeyspace
-//	cluster.Consistency = cConsistency
+	var e datasetentryStruct
+  if err := json.Unmarshal(body /*sDec*/, &e); err != nil {
+		errmsg := "ERROR: Could not decode body into datasetentryStruct type with Unmarshal: " + string(body) + "\n\n"
+    log.Printf(errmsg)
+		io.WriteString(w, errmsg)
+  }
 
-//	session, err := cluster.CreateSession()
 	err := initSession()
 	if err != nil {
 		msg := "Error creating session: " + err.Error()
@@ -212,10 +228,45 @@ func cassandraWriter(w http.ResponseWriter, r *http.Request, keyspace string, ta
 		gocql.TimeUUID(), e.Direction, e.Fromst, e.Last_updt, e.Length, e.Lif_lat, e.Lit_lat, e.Lit_lon, e.Strheading, e.Tost, e.Traffic, e.Segmentid, e.Start_lon, e.Street ).Exec()
 
 	if err != nil {
-		msg := "Error Authentication: " + err.Error()
+		msg := "ERROR: Error writing to Cassandra " + err.Error()
 		io.WriteString(w, msg)
 		log.Printf(msg)
 		//log.Fatalf(msg)
+		return
+	}
+
+}
+
+func sessionsCassandraWriter(w http.ResponseWriter, r *http.Request, keyspace string, table string, body []byte ) {
+
+	var e sessionStruct
+  if err := json.Unmarshal(body, &e); err != nil {
+		errmsg := "ERROR: Could not decode body into sessionStruct type with Unmarshal: " + string(body) + "\n\n"
+    log.Printf(errmsg)
+		io.WriteString(w, errmsg)
+		return
+  }
+
+	err := initSession()
+	if err != nil {
+		msg := "Error creating session: " + err.Error()
+		log.Printf(msg)
+		io.WriteString(w, "{\"status\":\"1\", \"message\":\""+ msg +"\"}")
+		return
+	}
+	defer thesession.Close()
+
+	query := fmt.Sprintf(
+			"INSERT INTO %s.%s (id, run_ts, topic, status, events_counter) VALUES (%s, '%s', '%s', '%s', %d)\n",
+			keyspace,
+			table,
+			e.Id, e.RunTS, e.Topic, e.Status, e.Counter)
+	io.WriteString(w, query)
+	err = thesession.Query(query).Exec()
+	if err != nil {
+		msg := "ERROR: Error writing to Cassandra " + err.Error() + "\n\n"
+		io.WriteString(w, msg)
+		log.Printf(msg)
 		return
 	}
 
