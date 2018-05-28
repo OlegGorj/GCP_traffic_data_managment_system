@@ -17,6 +17,7 @@ import (
 	"google.golang.org/appengine"
   "cloud.google.com/go/pubsub"
 	"github.com/gocql/gocql"
+	"github.com/gorilla/mux"
 
 	"github.com/newrelic/go-agent"
 )
@@ -48,11 +49,11 @@ func main() {
     log.Printf("ERROR: Issue with initializing newrelic application ")
 	}
 
-	http.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler))
-	http.HandleFunc(newrelic.WrapHandleFunc(app, "/insert/{keyspace}/{table}", pushHandler))
-  http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "This is main entry for endpoints..")
-	})
+	r := mux.NewRouter()
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler))
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/insert/{keyspace}/{table}", insertHandler))
+	r.HandleFunc("/", homeHandler)
+	http.Handle("/", r)
 
 	log.Print("Starting service.....")
 	appengine.Main()
@@ -88,11 +89,13 @@ type entityEntryJSONStruct struct {
 }
 
 
+func homeHandler(w http.ResponseWriter, r *http.Request) {
+}
 func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "ok")
 }
 
-func pushHandler(w http.ResponseWriter, r *http.Request) {
+func insertHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
   if r.Body == nil {
@@ -105,6 +108,10 @@ func pushHandler(w http.ResponseWriter, r *http.Request) {
     log.Printf("INFO:  Can't read http body ioutil.ReadAll... ")
 		return
 	}
+
+	vars := mux.Vars(r)
+	fmt.Fprintf(w, "We should insert the record to table %s in keysapce %s \n", vars["table"], vars["keyspace"])
+
   //var msg pushRequest
   //if err := json.Unmarshal([]byte(body), &msg); err != nil {
   //  log.Printf("ERROR: Could not decode body with Unmarshal: %s \n", string(body))

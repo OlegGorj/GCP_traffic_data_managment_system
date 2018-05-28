@@ -129,7 +129,7 @@ func pullSODADataHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
-	recordSession(time.Now(), "Ok", sessionsTopic, recordsCounter)
+	//recordSession(time.Now(), "Ok", sessionsTopic, recordsCounter)
 
 	sodareq := soda.NewGetRequest(sourceSODAUri, "")
 	sodareq.Format = "json"

@@ -1,7 +1,7 @@
 #!/bin/bash
 SESSIONS_TOPIC_NAME="common.sessions"
 TOPIC_NAME="us.chicago-city.transportation.traffic-tracker-congestion-estimates"
-SUB_PUSH2DATASTORE="push-to-datastore"
+SUB_PUSH2DATASTORE="push-to-cassandra"
 
 # TODO: check if exist
 gcloud alpha pubsub topics create ${TOPIC_NAME}
