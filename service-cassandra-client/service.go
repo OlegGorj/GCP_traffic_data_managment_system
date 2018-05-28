@@ -90,6 +90,7 @@ type entityEntryJSONStruct struct {
 
 
 func homeHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, "ok")
 }
 func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "ok")
@@ -99,18 +100,25 @@ func insertHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
   if r.Body == nil {
-      log.Print("ERROR: Please send a request body")
+      log.Print("ERROR: Please send a request body\n")
       return
   }
   body, err := ioutil.ReadAll(r.Body)
   defer r.Body.Close()
   if err != nil {
-    log.Printf("INFO:  Can't read http body ioutil.ReadAll... ")
+    log.Printf("ERROR:  Can't read http body ioutil.ReadAll...\n")
 		return
 	}
 
 	vars := mux.Vars(r)
-	fmt.Fprintf(w, "We should insert the record to table %s in keysapce %s \n", vars["table"], vars["keyspace"])
+	table := vars["table"]
+	kspace := vars["keyspace"]
+	// making assumptions here - service passing table and keyspace is aware and passing correct ones
+	//  i.e. no error checking at this time (TODO)
+	if table == "" || kspace == "" {
+		log.Printf("ERROR:  Can't have table or keyspace empty...\n")
+		return
+	}
 
   //var msg pushRequest
   //if err := json.Unmarshal([]byte(body), &msg); err != nil {
@@ -121,7 +129,7 @@ func insertHandler(w http.ResponseWriter, r *http.Request) {
   // sDec, _  := b64.StdEncoding.DecodeString( msg.Message.Data )
   //log.Printf("DEBUG:  >>>>> Message.Data:" + string(sDec) + "\n")
 
-	log.Printf("DEBUG:  >>>>>  body: %s \n", string(body))
+	//log.Printf("DEBUG:  >>>>>  body: %s \n", string(body))
 
   var data entityEntryJSONStruct
   if err := json.Unmarshal(body /*sDec*/, &data); err != nil {
@@ -130,7 +138,7 @@ func insertHandler(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, "{\"status\":\"1\", \"message\":\"" + errmsg + "\"}")
   }
 
-	cassandraWriter(w, r, data)
+	cassandraWriter(w, r, kspace, table, data)
 
 	w.WriteHeader(http.StatusOK)
 	io.WriteString(w, "{\"status\":\"0\", \"message\":\"ok\"}")
@@ -157,7 +165,7 @@ func initSession() error {
 
 func getCluster() *gocql.ClusterConfig {
      cluster := gocql.NewCluster(sHost)
-     cluster.Keyspace = datasetKeyspace
+     //cluster.Keyspace = datasetKeyspace
 		 cluster.Timeout = 3 * time.Second
 		 cluster.NumConns = 16
 	   cluster.Authenticator = gocql.PasswordAuthenticator{
@@ -169,7 +177,7 @@ func getCluster() *gocql.ClusterConfig {
      return cluster
 }
 
-func cassandraWriter(w http.ResponseWriter, r *http.Request, e entityEntryJSONStruct) {
+func cassandraWriter(w http.ResponseWriter, r *http.Request, keyspace string, table string, e entityEntryJSONStruct) {
 
 //  const cConsistency gocql.Consistency = gocql.One
 //	cluster := gocql.NewCluster(sHost)
@@ -192,8 +200,13 @@ func cassandraWriter(w http.ResponseWriter, r *http.Request, e entityEntryJSONSt
 		log.Printf(msg)
 		io.WriteString(w, "{\"status\":\"1\", \"message\":\""+ msg +"\"}")
 		//log.Fatalf(msg)
+		return
 	}
 	defer thesession.Close()
+
+	formated_query := fmt.Sprintf("INSERT INTO %s.%s (id, Direction, Fromst, Last_updt, Length, Lif_lat, Lit_lat, Lit_lon, Strheading, Tost, Traffic, Segmentid, Start_lon, Street) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", keyspace, table)
+	log.Printf(formated_query)
+	io.WriteString(w, formated_query)
 
 	err = thesession.Query(
 		`INSERT INTO northamerica.datasetentry (id, Direction, Fromst, Last_updt, Length, Lif_lat, Lit_lat, Lit_lon, Strheading, Tost, Traffic, Segmentid, Start_lon, Street) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
