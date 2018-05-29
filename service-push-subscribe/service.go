@@ -46,6 +46,7 @@ func main() {
 	}
 
 	r := mux.NewRouter()
+	// /_ah/push-handlers/ prefix
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/health", healthCheckHandler)).Methods("GET", "PUT")
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/push/{backend}", pushHandler)).Methods("PUT")
 	r.HandleFunc("/", homeHandler)

@@ -14,7 +14,6 @@ import (
 
 	"google.golang.org/appengine"
 	"github.com/gorilla/mux"
-
 	"cloud.google.com/go/pubsub"
   "golang.org/x/net/context"
 	"github.com/gocql/gocql"
@@ -23,11 +22,14 @@ import (
 )
 
 var (
+	projectName string
+
 	pubServiceUri string
 	sourceSODAUri string
+
 	publishTopic string
-	projectName string
 	sessionsTopic string
+	controlsTopic string
 )
 
 type sessionStruct struct {
@@ -44,8 +46,11 @@ func main() {
 
 	pubServiceUri = getENV("PUBLISH_SERVICE")
 	sourceSODAUri = getENV("DATASOURCE_SODA_URI")
+
 	publishTopic = getENV("TRAFFIC_TRACKER_TOPIC")
 	sessionsTopic = getENV("SESSIONS_TOPIC")
+	controlsTopic = getENV("CONTROLS_TOPIC")
+
 	projectName = getENV("GOOGLE_CLOUD_PROJECT")
 	newrelicKey := getENV("NEWRELIC_KEY")
 
@@ -57,8 +62,8 @@ func main() {
 	}
 
 	r := mux.NewRouter()
-	r.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler)).Methods("GET")
-	r.HandleFunc(newrelic.WrapHandleFunc(app, "/schedule", scheduleHandler)).Methods("GET", "POST")
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler))
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/schedule", scheduleHandler)).Methods("GET")
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/{country}/{state}/{city}/{catalog}/{category}/{dataset}", catalogHandler)).Methods("GET", "POST")
 	r.HandleFunc(newrelic.WrapHandleFunc(app,"/", homeHandler))
 
@@ -68,7 +73,7 @@ func main() {
 	//if err1 != nil {
  	//	log.Printf("ERROR: Issue with initializing newrelic application ")
 	//}
-	r.HandleFunc(newrelic.WrapHandleFunc(app, "/publish/{topic}", publishToTopicPOSTHandler)).Methods("POST")
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/publish/{topic}", publishToTopicWEnvelopePOSTHandler)).Methods("POST")
 	http.Handle("/", r)
 
 	log.Print("Starting service.....")
@@ -264,7 +269,7 @@ type publishEnvelope struct {
 	Data map[string]string `json:"data"`
 }
 
-func publishToTopicPOSTHandler(w http.ResponseWriter, r *http.Request) {
+func publishToTopicWEnvelopePOSTHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	switch {
@@ -290,7 +295,7 @@ func publishToTopicPOSTHandler(w http.ResponseWriter, r *http.Request) {
 
 			go func() {
 				// publish to topic
-				if err := publishToTopic(projectName, topic, string(body) ); err != nil {
+				if err := publishToTopicWEnvelope(projectName, topic, string(body) ); err != nil {
 					log.Fatalf("Failed to publish: %v. Topic name: %s\n", err, topic)
 				}
 			}()
@@ -304,7 +309,7 @@ func publishToTopicPOSTHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 
-func publishToTopic(projectName, topic, msg string) error {
+func publishToTopicWEnvelope(projectName, topic, msg string) error {
 
 	//
 	// Do envelope wrapping here
@@ -337,7 +342,6 @@ func publishToTopic(projectName, topic, msg string) error {
 
 func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "ok")
-	log.Print("health check called..")
 }
 func homeHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "ok")
@@ -346,4 +350,72 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 func scheduleHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "ok")
 	log.Print("scheduleHandler called..")
+
+
+}
+
+// { "ts":"2018-05-29 10:10:20", "topic":"us.chicago-city.transportation.traffic-tracker-congestion-estimates", "last_updated":"2008-05-25 14:21:04", "counter":90 }
+// { "ts":"2018-05-30 10:10:20", "topic":"us.chicago-city.transportation.traffic-tracker-congestion-estimates", "last_updated":"2008-04-26 14:21:04", "counter":110 }
+// { "ts":"2018-05-30 10:10:20", "topic":"us.chicago-city.transportation.traffic-tracker-congestion-estimates", "last_updated":"2008-04-25 14:21:04", "counter":110 }
+// { "ts":"2018-05-30 10:10:20", "topic":"us.chicago-city.transportation.traffic-tracker-congestion-estimates", "last_updated":"2008-04-24 14:21:04", "counter":110 }
+type controlStruct struct {
+		Ts string `json:"ts"`
+		Topic string `json:"topic"`
+		LastUpdated string `json:"last_updated"`
+		Counter int `json:"counter"`
+}
+
+func getLastUpdatedDate(w http.ResponseWriter, r *http.Request){
+	var prev_last_updated, last_updated string
+	ctx := context.Background()
+	client, err := pubsub.NewClient(ctx, projectName)
+	if err != nil {
+		fmt.Fprint(w, "Could not create pubsub Client:" + err.Error() + "for project" + projectName)
+		log.Fatalf("Could not create pubsub Client:" + err.Error() + "for project" + projectName)
+	}
+
+	sub := client.Subscription("pull-common.controls")
+	sub.ReceiveSettings.MaxExtension = 10 * time.Second
+	defer client.Close()
+	//var prev_last_updated time
+	err = sub.Receive(ctx, func(ctx context.Context, m *pubsub.Message) {
+		last_updated = string(m.Data)
+	 	log.Printf("Got message: %s", m.Data)
+
+		var e controlStruct
+	  if err := json.Unmarshal(m.Data /*sDec*/, &e); err != nil {
+			errmsg := "ERROR: Could not decode body into controlStruct type with Unmarshal: " + string(m.Data) + "\n\n"
+	    log.Printf(errmsg)
+			io.WriteString(w, errmsg)
+	  }
+		if e.Topic == publishTopic {
+			log.Printf("The message related to topic : "+ publishTopic)
+
+			m.Ack()
+			last_updated = e.LastUpdated
+			t_t1, _ := getTimeFromString(last_updated)
+			t_t2, _ := getTimeFromString(prev_last_updated)
+			if prev_last_updated == "" {
+				prev_last_updated = last_updated
+			} else if t_t1.After( t_t2 ) {
+				// push to prev_last_updated to one the older
+				prev_last_updated = last_updated
+			}
+
+			log.Printf("Oldest last_updated date is: "+ prev_last_updated + "\n\n")
+		}
+	 })
+	 if err != context.Canceled {
+		 return
+	 }
+}
+
+func getDateNow() string {
+	timenow := time.Now()
+	changedtime := fmt.Sprintf("%d-%02d-%02d %02d:%02d:%02d", timenow.Year(), timenow.Month(),timenow.Day(), timenow.Hour(),timenow.Minute(),timenow.Second() /*,timenow.Nanosecond()*/ )
+	return changedtime
+}
+
+func getTimeFromString(t string) (time.Time, error) {
+	return time.Parse("2006-01-02 15:04:05", t )
 }

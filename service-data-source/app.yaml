@@ -8,6 +8,7 @@ env_variables:
   DATASOURCE_SODA_URI: https://data.cityofchicago.org/resource/8v9j-bter
   TRAFFIC_TRACKER_TOPIC: us.chicago-city.transportation.traffic-tracker-congestion-estimates
   SESSIONS_TOPIC: common.sessions
+  CONTROLS_TOPIC: common.controls
   DATADOG_API_KEY: '35976cc80ec87e62b9ba7784794edcb8719d88cc'
   NEWRELIC_KEY: 'df553dd04a541579cffd9a3a60c7afa9ca692cc7'
 

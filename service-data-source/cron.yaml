@@ -4,7 +4,7 @@ cron:
 - description: "check data with 9 mins intervals"
   url: /schedule
   target: datasource-soda-worker
-  schedule: every 9 minutes
+  schedule: every 2 minutes
   retry_parameters:
     min_backoff_seconds: 2.5
     max_doublings: 5
