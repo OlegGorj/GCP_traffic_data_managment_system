@@ -57,18 +57,18 @@ func main() {
 	}
 
 	r := mux.NewRouter()
-	r.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler)).Methods("GET", "PUT")
-	r.HandleFunc(newrelic.WrapHandleFunc(app, "/schedule", scheduleHandler)).Methods("GET", "PUT")
-	r.HandleFunc(newrelic.WrapHandleFunc(app, "/{country}/{state}/{city}/{catalog}/{category}/{dataset}", catalogHandler)).Methods("PUT")
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler)).Methods("GET")
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/schedule", scheduleHandler)).Methods("GET", "POST")
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/{country}/{state}/{city}/{catalog}/{category}/{dataset}", catalogHandler)).Methods("GET", "POST")
 	r.HandleFunc(newrelic.WrapHandleFunc(app,"/", homeHandler))
 
 	//  newrelic part
-	config1 := newrelic.NewConfig("publish-service", newrelicKey)
-	app1, err1 := newrelic.NewApplication(config1)
-	if err1 != nil {
-    log.Printf("ERROR: Issue with initializing newrelic application ")
-	}
-	r.HandleFunc(newrelic.WrapHandleFunc(app1, "/publish/{topic}", publishToTopicPOSTHandler)).Methods("PUT")
+	//config1 := newrelic.NewConfig("publish-service", newrelicKey)
+	//app1, err1 := newrelic.NewApplication(config1)
+	//if err1 != nil {
+ 	//	log.Printf("ERROR: Issue with initializing newrelic application ")
+	//}
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/publish/{topic}", publishToTopicPOSTHandler)).Methods("POST")
 	http.Handle("/", r)
 
 	log.Print("Starting service.....")
@@ -142,6 +142,7 @@ func ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler(w http.Respon
 	sodareq.Format = "json"
 	//sodareq.Query.Limit = 10
   sodareq.Query.AddOrder("_last_updt", soda.DirAsc)
+	//sodareq.Query.Where = "_last_updt> '2018-05-29 00:00:00.0'"
 
   ogr, err := soda.NewOffsetGetRequest(sodareq)
 	if err != nil {
@@ -152,7 +153,7 @@ func ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler(w http.Respon
 				RunTS: run_ts,
 				Topic: sessionsTopic,
 				Counter: recordsCounter,
-				LastUpdt: "",
+				LastUpdt: lastUpdt,
 				} )
 		io.WriteString(w, errmsg )
 		log.Fatalf("SODA call failed: %v",err)
@@ -183,17 +184,9 @@ func ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler(w http.Respon
 					json_data := fmt.Sprintf(
 						"{ \"__session_id\": \"%s\", \"_last_updt\": \"%s\", \"_direction\": \"%s\", \"_fromst\": \"%s\", \"_length\": \"%s\", \"_lif_lat\": \"%s\", \"_lit_lat\": \"%s\", \"_lit_lon\": \"%s\", \"_strheading\": \"%s\", \"_tost\": \"%s\" , \"_traffic\": \"%s\", \"segmentid\": \"%s\", \"start_lon\": \"%s\", \"street\": \"%s\" } \n",
 						session_id.String(), r["_last_updt"], r["_direction"], r["_fromst"], r["_length"], r["_lif_lat"], r["_lit_lat"], r["_lit_lon"], r["_strheading"], r["_tost"] , r["_traffic"], r["segmentid"], r["start_lon"], r["street"]  )
-					//json_full := constructEnvelope(publishTopic, json_data)
-					// calling pub service
-					//log.Print("DEBUG: Calling pub service at  " + pubServiceUri + "with the payload: \n" + json_full + "\n")
-					//
-					// add session_id into payload json_data
-					//
-					rsp, err := http.Post(pubServiceUri + "/" + publishTopic, "application/json", bytes.NewBufferString(json_data))
-					defer rsp.Body.Close()
-					if /*body_byte*/ _, err = ioutil.ReadAll(rsp.Body) ; err != nil {
-						panic(err)
-					}
+
+					go callPublishService(publishTopic, []byte(json_data))
+
 					//log.Print("INFO: Response from pub service ("+ pubServiceUri +"): " + string(body_byte) + "\n\n")
 					lastUpdt = fmt.Sprintf("%s", r["_last_updt"])
       	} // end of range
@@ -217,8 +210,8 @@ func ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler(w http.Respon
 	// publish last updated date to control topic
 	// TODO
 
-	w.WriteHeader(http.StatusOK)
-	io.WriteString(w, "{\"status\":\"0\", \"message\":\"ok\"}" )
+	//w.WriteHeader(http.StatusOK)
+	//io.WriteString(w, "{\"status\":\"0\", \"message\":\"ok\"}" )
 }
 
 
@@ -237,17 +230,21 @@ func recordSession(session sessionStruct) error {
 	log.Print("DEBUG: sessionStr: " + string(sessionStr))
 
 	// publish session
-	go func() {
-		rsp, err := http.Post(pubServiceUri + "/" + sessionsTopic, "application/json", bytes.NewBuffer(sessionStr) ) // bytes.NewBufferString
-		defer rsp.Body.Close()
-		if /*body_byte*/ _, err = ioutil.ReadAll(rsp.Body) ; err != nil {
-			panic(err)
-		}
-	}()
-
-	return nil
+	err := callPublishService(sessionsTopic, sessionStr)
+	return err
 }
 
+func callPublishService(topic string, message []byte) error {
+
+	log.Print("DEBUG: POST callPublishService: topic: " + topic)
+
+	rsp, err := http.Post(pubServiceUri + "/" + topic, "application/json", bytes.NewBuffer(message) )
+	defer rsp.Body.Close()
+	if /*body_byte*/ _, err = ioutil.ReadAll(rsp.Body) ; err != nil {
+		panic(err)
+	}
+	return nil
+}
 
 func constructEnvelope(topic, data string) string {
 	return fmt.Sprintf( "{\"data\": %s , \"topic\":\"%s\"}", data, topic)
@@ -290,22 +287,7 @@ func publishToTopicPOSTHandler(w http.ResponseWriter, r *http.Request) {
 				io.WriteString(w, errormsg  )
 				return
 			}
-//			var msg publishEnvelope
-//		  if err := json.Unmarshal([]byte(body), &msg); err != nil {
-//				w.WriteHeader(http.StatusOK)
-//				msg := "ERROR: Could not decode body into publishEnvelope with Unmarshal: %s \n" + string(body) + "\n Error: " + err.Error()
-//				io.WriteString(w, msg)
-//		    log.Fatalf(msg)
-//				return
-//		  }
-//			jsondata, _ := json.Marshal(msg.Data)
-			//log.Printf("DEBUG: Topic from envelope: "    + msg.Topic + "\n Data-json from envelope"    + string(jsondata) + "\n")
 
-			// Topic should be retrieved from Config service
-//			topicName := msg.Topic
-//			if topicName == "" {
-//				log.Fatalf("ERROR: Topic name is empty")
-//			}
 			go func() {
 				// publish to topic
 				if err := publishToTopic(projectName, topic, string(body) ); err != nil {
