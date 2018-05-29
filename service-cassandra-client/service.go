@@ -73,6 +73,7 @@ type pushRequest struct {
 }
 
 type datasetentryStruct struct {
+	SessionID string `json:"__session_id"`
 	Direction string `json:"_direction"`
 	Fromst string `json:"_fromst"`
 	Last_updt string `json:"_last_updt"`
@@ -94,6 +95,8 @@ type sessionStruct struct {
 		Topic string `json:"topic"`
 		Status string `json:"status"`
 		Counter int `json:"counter"`
+		LastUpdt string `json:"last_updt"`
+		// dataset ID - to be populated by Cassandra Clent service
 }
 
 func homeHandler(w http.ResponseWriter, r *http.Request) {
@@ -222,10 +225,11 @@ func datasetentryCassandraWriter(w http.ResponseWriter, r *http.Request, keyspac
 
 	err = thesession.Query(
 		fmt.Sprintf(
-			"INSERT INTO %s.%s (id, Direction, Fromst, Last_updt, Length, Lif_lat, Lit_lat, Lit_lon, Strheading, Tost, Traffic, Segmentid, Start_lon, Street) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			"INSERT INTO %s.%s (id, dataset_id, session_id, direction, fromst, Last_updt, Length, Lif_lat, Lit_lat, Lit_lon, Strheading, Tost, Traffic, Segmentid, Start_lon, Street) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 			keyspace,
 			table),
-		gocql.TimeUUID(), e.Direction, e.Fromst, e.Last_updt, e.Length, e.Lif_lat, e.Lit_lat, e.Lit_lon, e.Strheading, e.Tost, e.Traffic, e.Segmentid, e.Start_lon, e.Street ).Exec()
+		gocql.TimeUUID(), gocql.TimeUUID() /* placeholder for dataset_id*/, e.SessionID,
+		e.Direction, e.Fromst, e.Last_updt, e.Length, e.Lif_lat, e.Lit_lat, e.Lit_lon, e.Strheading, e.Tost, e.Traffic, e.Segmentid, e.Start_lon, e.Street ).Exec()
 
 	if err != nil {
 		msg := "ERROR: Error writing to Cassandra " + err.Error()

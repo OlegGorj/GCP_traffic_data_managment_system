@@ -33,27 +33,27 @@ var (
 )
 
 func main() {
+
 	cassandraServiceUri = getENV("CASSANDRA_SERVICE")
 	trafficTrackingTopic = getENV("TRAFFIC_TRACKER_TOPIC")
 	sessionsTopic = getENV("SESSIONS_TOPIC")
 	newrelicKey := getENV("NEWRELIC_KEY")
 
-	config := newrelic.NewConfig("subscription-push-service", newrelicKey)
+	config := newrelic.NewConfig("push-subscription-service", newrelicKey)
 	app, err := newrelic.NewApplication(config)
 	if err != nil {
     log.Printf("ERROR: Issue with initializing newrelic application ")
 	}
-	//http.HandleFunc(newrelic.WrapHandleFunc(app, "/push/cassandra", pushCassandraHandler))
-	//http.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler))
 
 	r := mux.NewRouter()
-	r.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler))
-	r.HandleFunc(newrelic.WrapHandleFunc(app, "/push/{backend}", pushHandler))
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/health", healthCheckHandler)).Methods("GET", "PUT")
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/push/{backend}", pushHandler)).Methods("PUT")
 	r.HandleFunc("/", homeHandler)
 	http.Handle("/", r)
 
 	log.Print("Starting service.....")
 	appengine.Main()
+
 }
 
 type pushRequest struct {
@@ -74,6 +74,7 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 
 func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "ok")
+	log.Print("health check called..")
 }
 
 func pushHandler(w http.ResponseWriter, r *http.Request) {
@@ -89,6 +90,10 @@ func pushHandler(w http.ResponseWriter, r *http.Request) {
 				pushCassandraHandler(w, r)
 
 		case "datastore":
+				log.Printf("ERROR:  Specified backend is not supported...\n")
+				return
+
+		case "spanner":
 				log.Printf("ERROR:  Specified backend is not supported...\n")
 				return
 
@@ -108,7 +113,7 @@ func pushCassandraHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
   if r.Body == nil {
-      log.Print("ERROR: Please send a request body")
+      log.Print("ERROR: Request body missing\n")
       return
   }
   body, err := ioutil.ReadAll(r.Body)
@@ -134,7 +139,7 @@ func pushCassandraHandler(w http.ResponseWriter, r *http.Request) {
   }
 
 	// calling cassandra service
-	callCassandraClientService( msg_envelope.Topic, createKeyValuePairs(msg_envelope.Data) )
+	callCassandraClientService( msg_envelope.Topic, createKeyValuePairsAsString(msg_envelope.Data) )
 
 	w.WriteHeader(http.StatusOK)
 	io.WriteString(w, "{\"status\":\"0\", \"message\":\"ok\"}")
@@ -174,7 +179,7 @@ func getENV(k string) string {
 	return v
 }
 
-func createKeyValuePairs(m map[string]string) string {
+func createKeyValuePairsAsString(m map[string]string) string {
     b := new(bytes.Buffer)
     for key, value := range m {
         fmt.Fprintf(b, "%s=\"%s\"\n", key, value)
