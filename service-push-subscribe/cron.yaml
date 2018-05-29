@@ -1,0 +1,10 @@
+# cron.yaml
+# Google App Engine issues Cron requests from the IP address 0.1.0.1
+cron:
+- description: "health check with 14 mins intervals"
+  url: /_ah/health
+  target: push-subscription-worker
+  schedule: every 14 minutes
+  retry_parameters:
+    min_backoff_seconds: 2.5
+    max_doublings: 5

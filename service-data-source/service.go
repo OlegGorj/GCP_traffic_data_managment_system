@@ -55,11 +55,11 @@ func main() {
 	}
 
 	r := mux.NewRouter()
-	r.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler))
-	r.HandleFunc(newrelic.WrapHandleFunc(app, "/schedule", scheduleHandler))
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler).Methods("GET", "PUT")
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/schedule", scheduleHandler).Methods("GET", "PUT")
 	// /us/il/chicago/Transportation/Chicago-Traffic-Tracker-Congestion-Estimates-by-Segment/
 	//r.HandleFunc(newrelic.WrapHandleFunc(app, "/soda_pull_service", ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler))
-	r.HandleFunc(newrelic.WrapHandleFunc(app, "/{country}/{state}/{city}/{catalog}/{category}/{dataset}", catalogHandler))
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/{country}/{state}/{city}/{catalog}/{category}/{dataset}", catalogHandler).Methods("PUT")
 	r.HandleFunc(newrelic.WrapHandleFunc(app,"/", homeHandler))
 
 	//  newrelic part
