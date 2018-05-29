@@ -134,8 +134,7 @@ func pushCassandraHandler(w http.ResponseWriter, r *http.Request) {
   }
 
 	// calling cassandra service
-	callCassandraClientService(msg_envelope.Topic, msg_envelope.Data)
-
+	callCassandraClientService( msg_envelope.Topic, createKeyValuePairs(msg_envelope.Data) )
 
 	w.WriteHeader(http.StatusOK)
 	io.WriteString(w, "{\"status\":\"0\", \"message\":\"ok\"}")
@@ -148,6 +147,8 @@ func callCassandraClientService(topic string, sDec string){
 	c := &http.Client{
    Timeout: 60 * time.Second,
 	}
+	// Based on the name of the topic, determine which table record(s) should be sent to..
+	// This part should be obtained from Config service
 	serviceUri := cassandraServiceUri
 	if topic == trafficTrackingTopic {
 		serviceUri = cassandraServiceUri + "/northamerica/datasetentry"
@@ -157,7 +158,7 @@ func callCassandraClientService(topic string, sDec string){
 		log.Print("ERROR: Unsuppoerted value of key \"topic\" in envelope\n\n")
 		return
 	}
-	rsp, err := c.Post(cassandraServiceUri, "application/json", bytes.NewBuffer(sDec))
+	rsp, err := c.Post(serviceUri, "application/json", bytes.NewBufferString(sDec))
 	defer rsp.Body.Close()
 	body_byte, err := ioutil.ReadAll(rsp.Body)
 	if err != nil { panic(err) }
@@ -173,5 +174,12 @@ func getENV(k string) string {
 	return v
 }
 
+func createKeyValuePairs(m map[string]string) string {
+    b := new(bytes.Buffer)
+    for key, value := range m {
+        fmt.Fprintf(b, "%s=\"%s\"\n", key, value)
+    }
+    return b.String()
+}
 
 // eof
