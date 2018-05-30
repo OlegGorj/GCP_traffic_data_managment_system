@@ -140,6 +140,8 @@ func ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler(w http.Respon
 	session_id := gocql.TimeUUID()
 	run_ts := time.Now().String()
 
+	io.WriteString(w, "DEBUG: Starting session with ID: " +  session_id.String() )
+
 	w.Header().Set("Content-Type", "application/json")
 	//recordSession(time.Now(), "Ok", sessionsTopic, recordsCounter)
 
@@ -187,7 +189,7 @@ func ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler(w http.Respon
 
 					// contruct message envelope
 					json_data := fmt.Sprintf(
-						"{ \"__session_id\": \"%s\", \"_last_updt\": \"%s\", \"_direction\": \"%s\", \"_fromst\": \"%s\", \"_length\": \"%s\", \"_lif_lat\": \"%s\", \"_lit_lat\": \"%s\", \"_lit_lon\": \"%s\", \"_strheading\": \"%s\", \"_tost\": \"%s\" , \"_traffic\": \"%s\", \"segmentid\": \"%s\", \"start_lon\": \"%s\", \"street\": \"%s\" } \n",
+						"{ \"session_id\": \"%s\", \"_last_updt\": \"%s\", \"_direction\": \"%s\", \"_fromst\": \"%s\", \"_length\": \"%s\", \"_lif_lat\": \"%s\", \"_lit_lat\": \"%s\", \"_lit_lon\": \"%s\", \"_strheading\": \"%s\", \"_tost\": \"%s\" , \"_traffic\": \"%s\", \"segmentid\": \"%s\", \"start_lon\": \"%s\", \"street\": \"%s\" } \n",
 						session_id.String(), r["_last_updt"], r["_direction"], r["_fromst"], r["_length"], r["_lif_lat"], r["_lit_lat"], r["_lit_lon"], r["_strheading"], r["_tost"] , r["_traffic"], r["segmentid"], r["start_lon"], r["street"]  )
 
 					go callPublishService(publishTopic, []byte(json_data))
@@ -221,19 +223,9 @@ func ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler(w http.Respon
 
 
 func recordSession(session sessionStruct) error {
-//	session_id := gocql.TimeUUID()
-//	// construct session
-//	session := &sessionStruct{
-//		Id: session_id.String(),
-//		Status: status,
-//		RunTS: t.String(),
-//		Topic: topic,
-//		Counter: counts,
-//	}
 	sessionStr, _ := json.Marshal(session)
 
 	log.Print("DEBUG: sessionStr: " + string(sessionStr))
-
 	// publish session
 	err := callPublishService(sessionsTopic, sessionStr)
 	return err
@@ -251,23 +243,7 @@ func callPublishService(topic string, message []byte) error {
 	return nil
 }
 
-func constructEnvelope(topic, data string) string {
-	return fmt.Sprintf( "{\"data\": %s , \"topic\":\"%s\"}", data, topic)
-}
 
-func getENV(k string) string {
-	v := os.Getenv(k)
-	if v == "" {
-		log.Fatalf("%s environment variable not set.", k)
-	}
-	return v
-}
-
-
-type publishEnvelope struct {
-	Topic string  `json:"topic"`
-	Data map[string]string `json:"data"`
-}
 
 func publishToTopicWEnvelopePOSTHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -339,6 +315,26 @@ func publishToTopicWEnvelope(projectName, topic, msg string) error {
 
 	return nil
 }
+
+type publishEnvelope struct {
+	Topic string  `json:"topic"`
+	Data map[string]string `json:"data"`
+}
+
+func constructEnvelope(topic, data string) string {
+	// USE publishEnvelope instead
+	return fmt.Sprintf( "{\"data\": %s , \"topic\":\"%s\"}", data, topic)
+}
+
+func getENV(k string) string {
+	v := os.Getenv(k)
+	if v == "" {
+		log.Fatalf("%s environment variable not set.", k)
+	}
+	return v
+}
+
+
 
 func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "ok")

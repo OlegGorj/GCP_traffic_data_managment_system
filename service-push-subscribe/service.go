@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-  "io"
+  _ "io"
   "io/ioutil"
   "encoding/json"
   _ "strconv"
@@ -47,9 +47,9 @@ func main() {
 
 	r := mux.NewRouter()
 	// /_ah/push-handlers/ prefix
-	r.HandleFunc(newrelic.WrapHandleFunc(app, "/health", healthCheckHandler)).Methods("GET", "PUT")
-	r.HandleFunc(newrelic.WrapHandleFunc(app, "/push/{backend}", pushHandler)).Methods("PUT")
-	r.HandleFunc("/", homeHandler)
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler)).Methods("GET")
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/push/{fromtopic}/{backend}", pushHandler)).Methods("POST")
+	r.HandleFunc("/", homeHandler).Methods("GET")
 	http.Handle("/", r)
 
 	log.Print("Starting service.....")
@@ -79,16 +79,16 @@ func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func pushHandler(w http.ResponseWriter, r *http.Request) {
-
-	//vars := mux.Vars(r)
 	backend := mux.Vars(r)["backend"]
-	if backend == "" {
-		log.Printf("ERROR:  Can't have {backend} empty...\n")
+	fromtopic := mux.Vars(r)["fromtopic"]
+	if backend == "" || fromtopic == "" {
+		log.Printf("ERROR:  Can't have 'backen' or 'fromtopic' empty...\n")
 		return
 	}
+
 	switch backend {
 		case "cassandra":
-				pushCassandraHandler(w, r)
+				pushBackendCassandraRouter(w, r, fromtopic)
 
 		case "datastore":
 				log.Printf("ERROR:  Specified backend is not supported...\n")
@@ -109,7 +109,7 @@ type publishEnvelope struct {
 	Data map[string]string `json:"data"`
 }
 
-func pushCassandraHandler(w http.ResponseWriter, r *http.Request) {
+func pushBackendCassandraRouter(w http.ResponseWriter, r *http.Request, fromtopic string) {
 
 	w.Header().Set("Content-Type", "application/json")
 
@@ -120,35 +120,36 @@ func pushCassandraHandler(w http.ResponseWriter, r *http.Request) {
   body, err := ioutil.ReadAll(r.Body)
   defer r.Body.Close()
   if err != nil {
+		w.WriteHeader(http.StatusNotImplemented)
     log.Printf("INFO:  Can't read http body ioutil.ReadAll... ")
 		return
 	}
   var msg pushRequest
   if err := json.Unmarshal([]byte(body), &msg); err != nil {
+		w.WriteHeader(http.StatusNotImplemented)
     log.Printf("ERROR: Could not decode body with Unmarshal: %s \n", string(body))
+		return
   }
   sDec, _  := b64.StdEncoding.DecodeString( msg.Message.Data )
 
 	// Unmarshal the envelope
-	var msg_envelope publishEnvelope
-  if err := json.Unmarshal([]byte(sDec), &msg_envelope); err != nil {
-		w.WriteHeader(http.StatusOK)
-		errmsg := "ERROR: Could not decode body into publishEnvelope with Unmarshal: %s \n" + string(sDec) + "\n Error: " + err.Error()
-		io.WriteString(w, errmsg)
-    log.Fatalf(errmsg)
-		return
-  }
+//	var msg_envelope publishEnvelope
+//  if err := json.Unmarshal([]byte(sDec), &msg_envelope); err != nil {
+//		w.WriteHeader(http.StatusNotImplemented)
+//		errmsg := "ERROR: Could not decode body into publishEnvelope with Unmarshal. sDec: " + string( msg.Message.Data ) + " Error: " + err.Error()
+//		//io.WriteString(w, errmsg)
+//    log.Fatalf(errmsg)
+//		return
+//  }
 
 	// calling cassandra service
-	callCassandraClientService( msg_envelope.Topic, createKeyValuePairsAsString(msg_envelope.Data) )
+//	callCassandraClientService( msg_envelope.Topic, string(msg_envelope.Data) )
+	callCassandraClientService( fromtopic, string(sDec) )
 
 	w.WriteHeader(http.StatusOK)
-	io.WriteString(w, "{\"status\":\"0\", \"message\":\"ok\"}")
 }
 
 func callCassandraClientService(topic string, sDec string){
-
-	log.Print("DEBUG: Calling pub service at  " + cassandraServiceUri + "with the payload: \n" + string(sDec) + "\n")
 
 	c := &http.Client{
    Timeout: 60 * time.Second,
@@ -164,11 +165,14 @@ func callCassandraClientService(topic string, sDec string){
 		log.Print("ERROR: Unsuppoerted value of key \"topic\" in envelope\n\n")
 		return
 	}
+
+	log.Print("DEBUG: Calling pub service at  " + serviceUri + "with the payload(base64): " + b64.StdEncoding.EncodeToString( []byte(sDec) ) )
+
 	rsp, err := c.Post(serviceUri, "application/json", bytes.NewBufferString(sDec))
 	defer rsp.Body.Close()
 	body_byte, err := ioutil.ReadAll(rsp.Body)
 	if err != nil { panic(err) }
-	log.Print("DEBUG: Response from cassandra service ("+ cassandraServiceUri +"): " + string(body_byte) + "\n\n")
+	log.Print("DEBUG: Response from cassandra service ("+ serviceUri +"): " + string(body_byte) + "\n\n")
 
 }
 

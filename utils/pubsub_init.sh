@@ -1,6 +1,7 @@
 #!/bin/bash
 CONTROLS_TOPIC_NAME="common.controls"
 SUB_PULL_CONTROLS="pull-common.controls"
+SUB_PUSH2CASSANDRA_CONTROLS="push-to-cassandra.common.controls"
 
 SESSIONS_TOPIC_NAME="common.sessions"
 SUB_PUSH2CASSANDRA_SESSIONS="push-to-cassandra.common.sessions"
@@ -25,7 +26,12 @@ gcloud alpha pubsub subscriptions create ${SUB_PUSH2DATASTORE} \
 
 gcloud alpha pubsub subscriptions create ${SUB_PUSH2CASSANDRA_SESSIONS} \
      --topic ${SESSIONS_TOPIC_NAME} \
-     --push-endpoint https://push-subscription-worker-dot-tf-admin-aabm0pul.appspot.com/push/cassandra \
+     --push-endpoint https://push-subscription-worker-dot-tf-admin-aabm0pul.appspot.com/push/${SESSIONS_TOPIC_NAME}/cassandra \
+     --ack-deadline 30
+
+gcloud alpha pubsub subscriptions create ${SUB_PUSH2CASSANDRA_CONTROLS} \
+     --topic ${CONTROLS_TOPIC_NAME} \
+     --push-endpoint https://push-subscription-worker-dot-tf-admin-aabm0pul.appspot.com/push/${CONTROLS_TOPIC_NAME}/cassandra \
      --ack-deadline 30
 
 

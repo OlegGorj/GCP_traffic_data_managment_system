@@ -73,7 +73,7 @@ type pushRequest struct {
 }
 
 type datasetentryStruct struct {
-	SessionID string `json:"__session_id"`
+	SessionID string `json:"session_id"`
 	Direction string `json:"_direction"`
 	Fromst string `json:"_fromst"`
 	Last_updt string `json:"_last_updt"`
@@ -204,35 +204,77 @@ func getCluster() *gocql.ClusterConfig {
      return cluster
 }
 
-func datasetentryCassandraWriter(w http.ResponseWriter, r *http.Request, keyspace string, table string, body []byte/*e datasetentryStruct*/ ) {
 
-	var e datasetentryStruct
-  if err := json.Unmarshal(body /*sDec*/, &e); err != nil {
-		errmsg := "ERROR: Could not decode body into datasetentryStruct type with Unmarshal: " + string(body) + "\n\n"
-    log.Printf(errmsg)
+
+type publishEnvelope struct {
+	Topic string  `json:"topic"`
+	Data map[string]string `json:"data"`
+}
+
+//type publishEnvelope struct {
+//	Topic string  `json:"topic"`
+//	Data struct {
+//		SessionID string `json:"session_id"`
+//		Direction string `json:"_direction"`
+//		Fromst string `json:"_fromst"`
+//		Last_updt string `json:"_last_updt"`
+//		Length string `json:"_length"`
+//		Lif_lat string `json:"_lif_lat"`
+//		Lit_lat string `json:"_lit_lat"`
+//		Lit_lon string `json:"_lit_lon"`
+//		Strheading string `json:"_strheading"`
+//		Tost string `json:"_tost"`
+//		Traffic string `json:"_traffic"`
+//		Segmentid string `json:"segmentid"`
+//		Start_lon string `json:"start_lon"`
+//		Street string `json:"street"`
+//	}
+//}
+
+
+func datasetentryCassandraWriter(w http.ResponseWriter, r *http.Request, keyspace string, table string, envelope_body []byte ) {
+
+	// Unmarshal the envelope
+	var message publishEnvelope
+  if err := json.Unmarshal([]byte(envelope_body), &message); err != nil {
+		w.WriteHeader(http.StatusNotImplemented)
+		errmsg := "ERROR: Could not decode body into publishEnvelope with Unmarshal. " + " Error: " + err.Error()
 		io.WriteString(w, errmsg)
+    log.Fatalf(errmsg)
+		return
   }
+
+
+//	var e datasetentryStruct
+//  if err := json.Unmarshal(body /*sDec*/, &e); err != nil {
+//		errmsg := "ERROR: Could not decode body into datasetentryStruct type with Unmarshal: " + err.Error() + "\n\n"
+//    log.Printf(errmsg)
+//		io.WriteString(w, errmsg)
+//		return
+//  }
 
 	err := initSession()
 	if err != nil {
-		msg := "Error creating session: " + err.Error()
+		msg := "Error creating Cassandra session: " + err.Error()
 		log.Printf(msg)
-		io.WriteString(w, "{\"status\":\"1\", \"message\":\""+ msg +"\"}")
+		io.WriteString(w, msg)
 		//log.Fatalf(msg)
 		return
 	}
+
 	defer thesession.Close()
-
-	err = thesession.Query(
-		fmt.Sprintf(
-			"INSERT INTO %s.%s (id, dataset_id, session_id, direction, fromst, Last_updt, Length, Lif_lat, Lit_lat, Lit_lon, Strheading, Tost, Traffic, Segmentid, Start_lon, Street) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+	query := fmt.Sprintf(
+			"INSERT INTO %s.%s (id, dataset_id, session_id, direction, fromst, Last_updt, Length, Lif_lat, Lit_lat, Lit_lon, Strheading, Tost, Traffic, Segmentid, Start_lon, Street) VALUES ('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')",
 			keyspace,
-			table),
-		gocql.TimeUUID(), gocql.TimeUUID() /* placeholder for dataset_id*/, e.SessionID,
-		e.Direction, e.Fromst, e.Last_updt, e.Length, e.Lif_lat, e.Lit_lat, e.Lit_lon, e.Strheading, e.Tost, e.Traffic, e.Segmentid, e.Start_lon, e.Street ).Exec()
+			table,
+			gocql.TimeUUID(), gocql.TimeUUID() /* placeholder for dataset_id*/, message.Data["session_id"],
+			message.Data["_direction"], message.Data["_fromst"], message.Data["_last_updt"], message.Data["_length"], message.Data["_lif_lat"], message.Data["_lit_lat"], message.Data["_lit_lon"], message.Data["_strheading"], message.Data["_tost"], message.Data["_traffic"], message.Data["segmentid"], message.Data["start_lon"], message.Data["street"] )
+//		gocql.TimeUUID(), gocql.TimeUUID() /* placeholder for dataset_id*/, e.SessionID,
+//		e.Direction, e.Fromst, e.Last_updt, e.Length, e.Lif_lat, e.Lit_lat, e.Lit_lon, e.Strheading, e.Tost, e.Traffic, e.Segmentid, e.Start_lon, e.Street )
 
+	err = thesession.Query(query).Exec()
 	if err != nil {
-		msg := "ERROR: Error writing to Cassandra " + err.Error()
+		msg := "ERROR: datasetentryCassandraWriter: Query: "+query+". Error writing to Cassandra " + err.Error()
 		io.WriteString(w, msg)
 		log.Printf(msg)
 		//log.Fatalf(msg)
@@ -240,34 +282,46 @@ func datasetentryCassandraWriter(w http.ResponseWriter, r *http.Request, keyspac
 	}
 }
 
-func sessionsCassandraWriter(w http.ResponseWriter, r *http.Request, keyspace string, table string, body []byte ) {
+func sessionsCassandraWriter(w http.ResponseWriter, r *http.Request, keyspace string, table string, envelope_body []byte ) {
 
-	var e sessionStruct
-  if err := json.Unmarshal(body, &e); err != nil {
-		errmsg := "ERROR: Could not decode body into sessionStruct type with Unmarshal: " + string(body) + "\n\n"
-    log.Printf(errmsg)
+	log.Printf("DEBUG: sessionsCassandraWriter: starting attempt to write to Cassandra POST body: " + string(envelope_body) )
+
+	var message publishEnvelope
+  if err := json.Unmarshal([]byte(envelope_body), &message); err != nil {
+		w.WriteHeader(http.StatusNotImplemented)
+		errmsg := "ERROR: Could not decode body into publishEnvelope with Unmarshal. " + " Error: " + err.Error()
 		io.WriteString(w, errmsg)
+    log.Fatalf(errmsg)
 		return
   }
+
+//	var e sessionStruct
+//  if err := json.Unmarshal(body, &e); err != nil {
+//		errmsg := "ERROR: Could not decode body into sessionStruct type with Unmarshal: " + string(body)
+//    log.Printf(errmsg)
+//		io.WriteString(w, errmsg)
+//		return
+//  }
 
 	err := initSession()
 	if err != nil {
 		msg := "Error creating session: " + err.Error()
 		log.Printf(msg)
-		io.WriteString(w, "{\"status\":\"1\", \"message\":\""+ msg +"\"}")
+		io.WriteString(w, msg )
 		return
 	}
 	defer thesession.Close()
 
 	query := fmt.Sprintf(
-			"INSERT INTO %s.%s (id, run_ts, topic, status, events_counter) VALUES (%s, '%s', '%s', '%s', %d)\n",
+			"INSERT INTO %s.%s (id, run_ts, topic, status, events_counter, last_updt_date) VALUES ('%s', '%s', '%s', '%s', %d, '%s')",
 			keyspace,
 			table,
-			e.Id, e.RunTS, e.Topic, e.Status, e.Counter)
+			message.Data["id"], message.Data["run_ts"], message.Data["topic"], message.Data["status"], message.Data["counter"], message.Data["last_updt"])
+//			e.Id, e.RunTS, e.Topic, e.Status, e.Counter, e.LastUpdt)
 	io.WriteString(w, query)
 	err = thesession.Query(query).Exec()
 	if err != nil {
-		msg := "ERROR: Error writing to Cassandra " + err.Error() + "\n\n"
+		msg := "ERROR: sessionsCassandraWriter: Query: "+query+".  Error writing to Cassandra " + err.Error()
 		io.WriteString(w, msg)
 		log.Printf(msg)
 		return

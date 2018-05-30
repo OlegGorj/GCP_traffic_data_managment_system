@@ -74,7 +74,7 @@ create table northamerica.datasetentry(
   segmentid text,
   start_lon text,
   street text,
-  PRIMARY KEY(id) );
+  PRIMARY KEY((id), session_id ));
 // TODO: PRIMARY KEY should be {topic, status, }
 
 CREATE INDEX IF NOT EXISTS dataset_direction on northamerica.datasetentry(direction);
