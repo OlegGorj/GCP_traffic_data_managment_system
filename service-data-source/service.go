@@ -350,14 +350,13 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 func scheduleHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "ok")
 	log.Print("scheduleHandler called..")
-
-
 }
 
-// { "ts":"2018-05-29 10:10:20", "topic":"us.chicago-city.transportation.traffic-tracker-congestion-estimates", "last_updated":"2008-05-25 14:21:04", "counter":90 }
-// { "ts":"2018-05-30 10:10:20", "topic":"us.chicago-city.transportation.traffic-tracker-congestion-estimates", "last_updated":"2008-04-26 14:21:04", "counter":110 }
-// { "ts":"2018-05-30 10:10:20", "topic":"us.chicago-city.transportation.traffic-tracker-congestion-estimates", "last_updated":"2008-04-25 14:21:04", "counter":110 }
-// { "ts":"2018-05-30 10:10:20", "topic":"us.chicago-city.transportation.traffic-tracker-congestion-estimates", "last_updated":"2008-04-24 14:21:04", "counter":110 }
+// { "ts":"2018-05-01 10:10:20", "topic":"us.chicago-city.transportation.traffic-tracker-congestion-estimates", "last_updated":"2008-05-24 14:21:04", "counter":90 }
+// { "ts":"2018-05-02 10:10:20", "topic":"us.chicago-city.transportation.traffic-tracker-congestion-estimates", "last_updated":"2008-05-26 14:21:04", "counter":110 }
+// { "ts":"2018-05-03 10:10:20", "topic":"us.chicago-city.transportation.traffic-tracker-congestion-estimates", "last_updated":"2008-05-25 14:21:04", "counter":110 }
+// { "ts":"2018-05-04 10:10:20", "topic":"us.chicago-city.transportation.traffic-tracker-congestion-estimates", "last_updated":"2008-05-29 14:21:04", "counter":110 }
+/*
 type controlStruct struct {
 		Ts string `json:"ts"`
 		Topic string `json:"topic"`
@@ -365,8 +364,12 @@ type controlStruct struct {
 		Counter int `json:"counter"`
 }
 
+var (
+	 prev_last_updated string
+	 last_updated string
+)
+
 func getLastUpdatedDate(w http.ResponseWriter, r *http.Request){
-	var prev_last_updated, last_updated string
 	ctx := context.Background()
 	client, err := pubsub.NewClient(ctx, projectName)
 	if err != nil {
@@ -383,12 +386,13 @@ func getLastUpdatedDate(w http.ResponseWriter, r *http.Request){
 	 	log.Printf("Got message: %s", m.Data)
 
 		var e controlStruct
-	  if err := json.Unmarshal(m.Data /*sDec*/, &e); err != nil {
+	  if err := json.Unmarshal(m.Data , &e); err != nil {
 			errmsg := "ERROR: Could not decode body into controlStruct type with Unmarshal: " + string(m.Data) + "\n\n"
 	    log.Printf(errmsg)
 			io.WriteString(w, errmsg)
 	  }
 		if e.Topic == publishTopic {
+
 			log.Printf("The message related to topic : "+ publishTopic)
 
 			m.Ack()
@@ -402,7 +406,7 @@ func getLastUpdatedDate(w http.ResponseWriter, r *http.Request){
 				prev_last_updated = last_updated
 			}
 
-			log.Printf("Oldest last_updated date is: "+ prev_last_updated + "\n\n")
+			log.Printf("Between " + prev_last_updated+ " and "+last_updated +"... Oldest last_updated date is: "+ prev_last_updated + "\n\n")
 		}
 	 })
 	 if err != context.Canceled {
@@ -412,10 +416,11 @@ func getLastUpdatedDate(w http.ResponseWriter, r *http.Request){
 
 func getDateNow() string {
 	timenow := time.Now()
-	changedtime := fmt.Sprintf("%d-%02d-%02d %02d:%02d:%02d", timenow.Year(), timenow.Month(),timenow.Day(), timenow.Hour(),timenow.Minute(),timenow.Second() /*,timenow.Nanosecond()*/ )
+	changedtime := fmt.Sprintf("%d-%02d-%02d %02d:%02d:%02d", timenow.Year(), timenow.Month(),timenow.Day(), timenow.Hour(),timenow.Minute(),timenow.Second()  )
 	return changedtime
 }
 
 func getTimeFromString(t string) (time.Time, error) {
 	return time.Parse("2006-01-02 15:04:05", t )
 }
+*/
