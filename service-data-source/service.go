@@ -11,6 +11,8 @@ import (
 	"bytes"
 	"io/ioutil"
 	"time"
+	"strconv"
+	"runtime/debug"
 
 	"google.golang.org/appengine"
 	"github.com/gorilla/mux"
@@ -37,7 +39,7 @@ type sessionStruct struct {
     RunTS string `json:"run_ts"`
 		Topic string `json:"topic"`
 		Status string `json:"status"`
-		Counter int `json:"counter"`
+		Counter string `json:"counter"`
 		LastUpdt string `json:"last_updt"`
 		// dataset ID - to be populated by Cassandra Clent service
 }
@@ -62,17 +64,13 @@ func main() {
 	}
 
 	r := mux.NewRouter()
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/liveness_check", healthCheckHandler))
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/readiness_check", healthCheckHandler))
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler))
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/schedule", scheduleHandler)).Methods("GET")
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/{country}/{state}/{city}/{catalog}/{category}/{dataset}", catalogHandler)).Methods("GET", "POST")
 	r.HandleFunc(newrelic.WrapHandleFunc(app,"/", homeHandler))
 
-	//  newrelic part
-	//config1 := newrelic.NewConfig("publish-service", newrelicKey)
-	//app1, err1 := newrelic.NewApplication(config1)
-	//if err1 != nil {
- 	//	log.Printf("ERROR: Issue with initializing newrelic application ")
-	//}
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/publish/{topic}", publishToTopicWEnvelopePOSTHandler)).Methods("POST")
 	http.Handle("/", r)
 
@@ -126,7 +124,7 @@ func catalogHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
-	io.WriteString(w, "{\"status\":\"0\", \"message\":\"ok\"}")
+	//io.WriteString(w, "{\"status\":\"0\", \"message\":\"ok\"}")
 }
 
 
@@ -140,10 +138,10 @@ func ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler(w http.Respon
 	session_id := gocql.TimeUUID()
 	run_ts := time.Now().String()
 
-	io.WriteString(w, "DEBUG: Starting session with ID: " +  session_id.String() )
-
 	w.Header().Set("Content-Type", "application/json")
-	//recordSession(time.Now(), "Ok", sessionsTopic, recordsCounter)
+
+	debug_msg := fmt.Sprintf("DEBUG: Ending session with ID: %s and count of records: %d \n",  session_id.String(), recordsCounter)
+	io.WriteString(w, debug_msg)
 
 	sodareq := soda.NewGetRequest(sourceSODAUri, "")
 	sodareq.Format = "json"
@@ -153,13 +151,13 @@ func ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler(w http.Respon
 
   ogr, err := soda.NewOffsetGetRequest(sodareq)
 	if err != nil {
-		errmsg := "{\"status\":\"1\", \"" + "SODA call failed: " + err.Error() + "\":\"ok\"}"
+		errmsg := "SODA call failed: " + err.Error()
 		err = recordSession( sessionStruct{
 				Id: session_id.String(),
 				Status: status,
 				RunTS: run_ts,
-				Topic: sessionsTopic,
-				Counter: recordsCounter,
+				Topic: publishTopic,
+				Counter: strconv.Itoa(recordsCounter),
 				LastUpdt: lastUpdt,
 				} )
 		io.WriteString(w, errmsg )
@@ -167,7 +165,7 @@ func ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler(w http.Respon
 		return
 	}
 
-  for i := 0; i < 14; i++ {
+  for i := 0; i < 4; i++ {
 		ogr.Add(1)
 		go func() {
 			defer ogr.Done()
@@ -179,20 +177,19 @@ func ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler(w http.Respon
 
 				results := make([]map[string]interface{}, 0)
 				err = json.NewDecoder(resp.Body).Decode(&results)
-				resp.Body.Close()
+				defer resp.Body.Close()
 				if err != nil { log.Fatalf("Can't Decode message from SODA call: %v",err) }
 
 				//Process the data
         for _, r := range results {
 					// increase counter
 					recordsCounter++
-
 					// contruct message envelope
 					json_data := fmt.Sprintf(
 						"{ \"session_id\": \"%s\", \"_last_updt\": \"%s\", \"_direction\": \"%s\", \"_fromst\": \"%s\", \"_length\": \"%s\", \"_lif_lat\": \"%s\", \"_lit_lat\": \"%s\", \"_lit_lon\": \"%s\", \"_strheading\": \"%s\", \"_tost\": \"%s\" , \"_traffic\": \"%s\", \"segmentid\": \"%s\", \"start_lon\": \"%s\", \"street\": \"%s\" } \n",
 						session_id.String(), r["_last_updt"], r["_direction"], r["_fromst"], r["_length"], r["_lif_lat"], r["_lit_lat"], r["_lit_lon"], r["_strheading"], r["_tost"] , r["_traffic"], r["segmentid"], r["start_lon"], r["street"]  )
 
-					go callPublishService(publishTopic, []byte(json_data))
+					callPublishService(publishTopic, []byte(json_data))
 
 					//log.Print("INFO: Response from pub service ("+ pubServiceUri +"): " + string(body_byte) + "\n\n")
 					lastUpdt = fmt.Sprintf("%s", r["_last_updt"])
@@ -204,40 +201,44 @@ func ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler(w http.Respon
 	}
 	ogr.Wait()
 
+	debug_msg = fmt.Sprintf("DEBUG: Ending session with ID: %s and count of records: %d \n",  session_id.String(), recordsCounter)
+	io.WriteString(w, debug_msg)
+
 	// publish session details
 	err = recordSession( sessionStruct{
 			Id: session_id.String(),
 			Status: status,
 			RunTS: run_ts,
-			Topic: sessionsTopic,
-			Counter: recordsCounter,
+			Topic: publishTopic,
+			Counter: strconv.Itoa(recordsCounter),
 			LastUpdt: lastUpdt,
 			} )
-
+	if err != nil {
+		w.WriteHeader(http.StatusNotImplemented)
+		return
+	}
 	// publish last updated date to control topic
 	// TODO
 
-	//w.WriteHeader(http.StatusOK)
-	//io.WriteString(w, "{\"status\":\"0\", \"message\":\"ok\"}" )
+	w.WriteHeader(http.StatusOK)
+	debug.FreeOSMemory()
 }
 
 
 func recordSession(session sessionStruct) error {
 	sessionStr, _ := json.Marshal(session)
-
 	log.Print("DEBUG: sessionStr: " + string(sessionStr))
 	// publish session
-	err := callPublishService(sessionsTopic, sessionStr)
-	return err
+	return callPublishService(sessionsTopic, sessionStr)
 }
 
 func callPublishService(topic string, message []byte) error {
 
 	log.Print("DEBUG: POST callPublishService: topic: " + topic)
-
 	rsp, err := http.Post(pubServiceUri + "/" + topic, "application/json", bytes.NewBuffer(message) )
 	defer rsp.Body.Close()
-	if /*body_byte*/ _, err = ioutil.ReadAll(rsp.Body) ; err != nil {
+	_, err = ioutil.ReadAll(rsp.Body)
+	if err != nil {
 		panic(err)
 	}
 	return nil
@@ -256,6 +257,7 @@ func publishToTopicWEnvelopePOSTHandler(w http.ResponseWriter, r *http.Request) 
 
 			if r.Body == nil {
 					errormsg := "ERROR: Please send a request body"
+					w.WriteHeader(http.StatusNotImplemented)
 					io.WriteString(w, errormsg  )
 					log.Fatalf(errormsg + "%v", errormsg)
 		      return
@@ -264,36 +266,33 @@ func publishToTopicWEnvelopePOSTHandler(w http.ResponseWriter, r *http.Request) 
 		  defer r.Body.Close()
 		  if err != nil {
 				errormsg := "ERROR:  Can't read http body ioutil.ReadAll"
-		    log.Fatalf(errormsg + "%v", err)
+				w.WriteHeader(http.StatusNotImplemented)
 				io.WriteString(w, errormsg  )
+				log.Fatalf(errormsg + "%v", err)
 				return
 			}
 
-			go func() {
+//			go func() {
 				// publish to topic
 				if err := publishToTopicWEnvelope(projectName, topic, string(body) ); err != nil {
+					w.WriteHeader(http.StatusNotImplemented)
 					log.Fatalf("Failed to publish: %v. Topic name: %s\n", err, topic)
 				}
-			}()
+//			}()
 
 	  default:
 	      http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 	}
 
 	w.WriteHeader(http.StatusOK)
-	io.WriteString(w, "{\"status\":\"0\", \"message\":\"ok\"}" )
 }
 
 
 func publishToTopicWEnvelope(projectName, topic, msg string) error {
 
-	//
-	// Do envelope wrapping here
-	//
 	json_full := constructEnvelope(topic, msg)
 
 	ctx := context.Background()
-	//log.Print("DEBUG: Calling PUB service at project " + projectName)
 	client, err := pubsub.NewClient(ctx, projectName)
 	if err != nil {
 		log.Fatalf("Could not create pubsub Client:" + err.Error() + "for project" + projectName)
@@ -312,7 +311,6 @@ func publishToTopicWEnvelope(projectName, topic, msg string) error {
 	}
 
 	log.Print("DEBUG: Published a message; msg ID: " + id + "\n")
-
 	return nil
 }
 
@@ -340,7 +338,9 @@ func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "ok")
 }
 func homeHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, "ok")
+	fmt.Fprint(w, "Implemented endpoints:\n")
+	fmt.Fprint(w, "GET /schedule\n")
+	fmt.Fprint(w, "POST/GET /us/il/chicago/data/transportation/Chicago-Traffic-Tracker-Congestion-Estimates-by-Segment\n")
 }
 
 func scheduleHandler(w http.ResponseWriter, r *http.Request) {

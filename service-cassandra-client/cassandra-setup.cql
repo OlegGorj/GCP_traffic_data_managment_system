@@ -8,7 +8,7 @@ create table common.sessions(
   run_ts text,        // time of execution
   topic text,         // name of the topic
   status text,        // failed/complete
-  events_counter int, // messages count within the session
+  events_counter text, // messages count within the session
   last_updt_date text,// last updated date within session i.e. of last record
   PRIMARY KEY(id) );
 

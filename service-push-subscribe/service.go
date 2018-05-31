@@ -9,11 +9,11 @@ import (
   "encoding/json"
   _ "strconv"
   "time"
-  _ "html/template"
   "os"
   "sync"
   b64 "encoding/base64"
 	"bytes"
+	_ "runtime/debug"
 
 	"google.golang.org/appengine"
   "cloud.google.com/go/pubsub"
@@ -111,6 +111,8 @@ type publishEnvelope struct {
 
 func pushBackendCassandraRouter(w http.ResponseWriter, r *http.Request, fromtopic string) {
 
+	time.Sleep(3 * time.Second)
+
 	w.Header().Set("Content-Type", "application/json")
 
   if r.Body == nil {
@@ -131,19 +133,7 @@ func pushBackendCassandraRouter(w http.ResponseWriter, r *http.Request, fromtopi
 		return
   }
   sDec, _  := b64.StdEncoding.DecodeString( msg.Message.Data )
-
-	// Unmarshal the envelope
-//	var msg_envelope publishEnvelope
-//  if err := json.Unmarshal([]byte(sDec), &msg_envelope); err != nil {
-//		w.WriteHeader(http.StatusNotImplemented)
-//		errmsg := "ERROR: Could not decode body into publishEnvelope with Unmarshal. sDec: " + string( msg.Message.Data ) + " Error: " + err.Error()
-//		//io.WriteString(w, errmsg)
-//    log.Fatalf(errmsg)
-//		return
-//  }
-
 	// calling cassandra service
-//	callCassandraClientService( msg_envelope.Topic, string(msg_envelope.Data) )
 	callCassandraClientService( fromtopic, string(sDec) )
 
 	w.WriteHeader(http.StatusOK)
@@ -166,12 +156,13 @@ func callCassandraClientService(topic string, sDec string){
 		return
 	}
 
-	log.Print("DEBUG: Calling pub service at  " + serviceUri + "with the payload(base64): " + b64.StdEncoding.EncodeToString( []byte(sDec) ) )
+	log.Print("DEBUG: Calling Cassandra service at  " + serviceUri + "with the payload(base64): " + b64.StdEncoding.EncodeToString( []byte(sDec) ) )
 
-	rsp, err := c.Post(serviceUri, "application/json", bytes.NewBufferString(sDec))
-	defer rsp.Body.Close()
-	body_byte, err := ioutil.ReadAll(rsp.Body)
-	if err != nil { panic(err) }
+		rsp, err := c.Post(serviceUri, "application/json", bytes.NewBufferString(sDec))
+		defer rsp.Body.Close()
+		body_byte, err := ioutil.ReadAll(rsp.Body)
+		if err != nil { panic(err) }
+
 	log.Print("DEBUG: Response from cassandra service ("+ serviceUri +"): " + string(body_byte) + "\n\n")
 
 }
@@ -184,12 +175,5 @@ func getENV(k string) string {
 	return v
 }
 
-func createKeyValuePairsAsString(m map[string]string) string {
-    b := new(bytes.Buffer)
-    for key, value := range m {
-        fmt.Fprintf(b, "%s=\"%s\"\n", key, value)
-    }
-    return b.String()
-}
 
 // eof

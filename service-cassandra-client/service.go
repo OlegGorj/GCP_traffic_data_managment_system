@@ -43,7 +43,7 @@ func main() {
 	newrelicKey := getENV("NEWRELIC_KEY")
 
 	//  newrelic part
-	config := newrelic.NewConfig("cassandra_client-service", newrelicKey)
+	config := newrelic.NewConfig("cassandra-client-service", newrelicKey)
 	app, err := newrelic.NewApplication(config)
 	if err != nil {
     log.Printf("ERROR: Issue with initializing newrelic application ")
@@ -193,8 +193,7 @@ func initSession() error {
 
 func getCluster() *gocql.ClusterConfig {
      cluster := gocql.NewCluster(sHost)
-     //cluster.Keyspace = datasetKeyspace
-		 cluster.Timeout = 3 * time.Second
+		 cluster.Timeout = 15 * time.Second
 		 cluster.NumConns = 16
 	   cluster.Authenticator = gocql.PasswordAuthenticator{
 	 		Username: sUsername,
@@ -239,7 +238,6 @@ func datasetentryCassandraWriter(w http.ResponseWriter, r *http.Request, keyspac
 			table,
 			gocql.TimeUUID(), gocql.TimeUUID() /* placeholder for dataset_id*/, message.Data["session_id"],
 			message.Data["_direction"], message.Data["_fromst"], message.Data["_last_updt"], message.Data["_length"], message.Data["_lif_lat"], message.Data["_lit_lat"], message.Data["_lit_lon"], message.Data["_strheading"], message.Data["_tost"], message.Data["_traffic"], message.Data["segmentid"], message.Data["start_lon"], message.Data["street"] )
-
 	err = thesession.Query(query).Exec()
 	if err != nil {
 		msg := "ERROR: datasetentryCassandraWriter: Query: "+query+". Error writing to Cassandra " + err.Error()
@@ -274,11 +272,11 @@ func sessionsCassandraWriter(w http.ResponseWriter, r *http.Request, keyspace st
 	defer thesession.Close()
 
 	query := fmt.Sprintf(
-			"INSERT INTO %s.%s (id, run_ts, topic, status, events_counter, last_updt_date) VALUES (%s, '%s', '%s', '%s', %d, '%s')",
+			"INSERT INTO %s.%s (id, run_ts, topic, status, events_counter, last_updt_date) VALUES (%s, '%s', '%s', '%s', '%s', '%s')",
 			keyspace,
 			table,
 			message.Data["id"], message.Data["run_ts"], message.Data["topic"], message.Data["status"], message.Data["counter"], message.Data["last_updt"])
-//			e.Id, e.RunTS, e.Topic, e.Status, e.Counter, e.LastUpdt)
+	// send back to caller
 	io.WriteString(w, query)
 
 	err = thesession.Query(query).Exec()
