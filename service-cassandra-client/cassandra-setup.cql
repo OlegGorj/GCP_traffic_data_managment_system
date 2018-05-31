@@ -4,13 +4,13 @@ CREATE  KEYSPACE IF NOT EXISTS common WITH REPLICATION = { 'class' : 'SimpleStra
 
 // data receive sessions
 create table common.sessions(
-  id UUID,          // id of the session
-  run_ts timestamp, // time of execution
-  topic text,       //
-  status text,      // failed/complete
-  events_counter int, 
+  id UUID,            // id of the session
+  run_ts text,        // time of execution
+  topic text,         // name of the topic
+  status text,        // failed/complete
+  events_counter text, // messages count within the session
+  last_updt_date text,// last updated date within session i.e. of last record
   PRIMARY KEY(id) );
-
 
 // Catalog
 create table northamerica.catalog(
@@ -41,12 +41,13 @@ CREATE INDEX IF NOT EXISTS category_type on northamerica.category(type);
 create table northamerica.dataset(
   id UUID,
   category_id UUID,
-  created text,
+  created_ts text,
   description text,
   name text,
+  topic text,
   frequency text,
   pii boolean,
-  updated text,
+  updated_ts text,
   PRIMARY KEY(id) );
 
 CREATE INDEX IF NOT EXISTS dataset_name on northamerica.dataset(name);
@@ -73,7 +74,8 @@ create table northamerica.datasetentry(
   segmentid text,
   start_lon text,
   street text,
-  PRIMARY KEY(id) );
+  PRIMARY KEY((id), session_id ));
+// TODO: PRIMARY KEY should be {topic, status, }
 
 CREATE INDEX IF NOT EXISTS dataset_direction on northamerica.datasetentry(direction);
 CREATE INDEX IF NOT EXISTS dataset_segmentid on northamerica.datasetentry(segmentid);

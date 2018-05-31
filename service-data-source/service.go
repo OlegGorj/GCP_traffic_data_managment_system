@@ -11,10 +11,11 @@ import (
 	"bytes"
 	"io/ioutil"
 	"time"
+	"strconv"
+	"runtime/debug"
 
 	"google.golang.org/appengine"
-	_ "google.golang.org/appengine/log"
-
+	"github.com/gorilla/mux"
 	"cloud.google.com/go/pubsub"
   "golang.org/x/net/context"
 	"github.com/gocql/gocql"
@@ -23,11 +24,14 @@ import (
 )
 
 var (
+	projectName string
+
 	pubServiceUri string
 	sourceSODAUri string
+
 	publishTopic string
-	projectName string
 	sessionsTopic string
+	controlsTopic string
 )
 
 type sessionStruct struct {
@@ -35,20 +39,20 @@ type sessionStruct struct {
     RunTS string `json:"run_ts"`
 		Topic string `json:"topic"`
 		Status string `json:"status"`
-		Counter int `json:"counter"`
+		Counter string `json:"counter"`
+		LastUpdt string `json:"last_updt"`
+		// dataset ID - to be populated by Cassandra Clent service
 }
-
-//
-// endpoint
-// /us/il/chicago/Transportation/Chicago-Traffic-Tracker-Congestion-Estimates-by-Segment/
-//
 
 func main() {
 
 	pubServiceUri = getENV("PUBLISH_SERVICE")
 	sourceSODAUri = getENV("DATASOURCE_SODA_URI")
-	publishTopic = getENV("PUBSUB_TOPIC")
+
+	publishTopic = getENV("TRAFFIC_TRACKER_TOPIC")
 	sessionsTopic = getENV("SESSIONS_TOPIC")
+	controlsTopic = getENV("CONTROLS_TOPIC")
+
 	projectName = getENV("GOOGLE_CLOUD_PROJECT")
 	newrelicKey := getENV("NEWRELIC_KEY")
 
@@ -58,94 +62,110 @@ func main() {
 	if err != nil {
     log.Printf("ERROR: Issue with initializing newrelic application ")
 	}
-	http.HandleFunc(newrelic.WrapHandleFunc(app, "/soda_pull_service", pullSODADataHandler))
-	http.HandleFunc(newrelic.WrapHandleFunc(app, "/schedule", scheduleHandler))
-	http.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler))
 
-	//  newrelic part
-	config1 := newrelic.NewConfig("publish-service", newrelicKey)
-	app1, err1 := newrelic.NewApplication(config1)
-	if err1 != nil {
-    log.Printf("ERROR: Issue with initializing newrelic application ")
-	}
-	http.HandleFunc(newrelic.WrapHandleFunc(app1, "/publish", publishHandler))
+	r := mux.NewRouter()
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/liveness_check", healthCheckHandler))
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/readiness_check", healthCheckHandler))
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler))
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/schedule", scheduleHandler)).Methods("GET")
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/{country}/{state}/{city}/{catalog}/{category}/{dataset}", catalogHandler)).Methods("GET", "POST")
+	r.HandleFunc(newrelic.WrapHandleFunc(app,"/", homeHandler))
+
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/publish/{topic}", publishToTopicWEnvelopePOSTHandler)).Methods("POST")
+	http.Handle("/", r)
 
 	log.Print("Starting service.....")
 	appengine.Main()
 
 }
 
-func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, "ok")
-}
-
-func scheduleHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, "ok")
-	log.Print("scheduleHandler called..")
-}
-
-
-func recordSession(t time.Time, status string, topic string, counts int) int {
-	session_id := gocql.TimeUUID()
-	// construct session
-	session := &sessionStruct{
-		Id: session_id.String(),
-		Status: status,
-		RunTS: t.String(),
-		Topic: topic,
-		Counter: counts,
-	}
-	sessionStr, _ := json.Marshal(session)
-
-	log.Print("DEBUG: sessionStr: " + string(sessionStr))
-
-	// publish session
-	go func() {
-		log.Print("DEBUG: Calling PUB service at project " + projectName)
-
-		ctx := context.Background()
-		client, err := pubsub.NewClient(ctx, projectName)
-		if err != nil {
-			log.Fatalf("Could not create pubsub Client:" + err.Error() + "for project" + projectName)
-			return
-		}
-		t := client.Topic(topic)
-		result := t.Publish( ctx, &pubsub.Message{Data: []byte(sessionStr)} )
-		id, err := result.Get(ctx)
-		if err != nil {
-			log.Print("ERROR: could not get published message ID from PUBSUB: " + err.Error() + "\n")
-			return
-		}
-		log.Print("DEBUG: Published session; msg ID: " + id + "\n")
-	}()
-
-	return 0
-}
-
-
-func pullSODADataHandler(w http.ResponseWriter, r *http.Request) {
-	var recordsCounter int
-	//var succesFlag bool
+func catalogHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
-	recordSession(time.Now(), "Ok", sessionsTopic, recordsCounter)
+	country := mux.Vars(r)["country"]
+	state := mux.Vars(r)["state"]
+	city := mux.Vars(r)["city"]
+	catalog := mux.Vars(r)["catalog"]
+	category := mux.Vars(r)["category"]
+	dataset := mux.Vars(r)["dataset"]
+
+	// making assumptions here - service passing table and keyspace is aware and passing correct ones
+	//  i.e. no error checking at this time (TODO)
+
+	if country == "" || state == "" || city == "" || catalog == "" || category == "" || dataset == ""{
+		io.WriteString(w, "ERROR:  Can't have {country}, {state}, {city}, {catalog}, {category} or {dataset} empty...\n")
+		return
+	}
+	if category == "transportation" {
+
+		switch dataset {
+			case "Chicago-Traffic-Tracker-Congestion-Estimates-by-Segment":
+				ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler(w, r)
+
+			default:
+					io.WriteString(w,"ERROR:  Specified dataset is not supported...\n")
+					return
+		}
+
+	} else if category == "environment" {
+		switch dataset {
+			case "Energy-Usage-2010":
+					return
+
+			default:
+					io.WriteString(w, "ERROR:  Specified table is not supported...\n")
+					return
+		}
+
+	}else {
+		io.WriteString(w,"ERROR:  Specified keyspace is not supported...\n")
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	//io.WriteString(w, "{\"status\":\"0\", \"message\":\"ok\"}")
+}
+
+
+
+
+func ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler(w http.ResponseWriter, r *http.Request) {
+
+	var recordsCounter int
+	var lastUpdt string
+	status := "ok"
+	session_id := gocql.TimeUUID()
+	run_ts := time.Now().String()
+
+	w.Header().Set("Content-Type", "application/json")
+
+	debug_msg := fmt.Sprintf("DEBUG: Ending session with ID: %s and count of records: %d \n",  session_id.String(), recordsCounter)
+	io.WriteString(w, debug_msg)
 
 	sodareq := soda.NewGetRequest(sourceSODAUri, "")
 	sodareq.Format = "json"
 	//sodareq.Query.Limit = 10
   sodareq.Query.AddOrder("_last_updt", soda.DirAsc)
+	//sodareq.Query.Where = "_last_updt> '2018-05-29 00:00:00.0'"
 
   ogr, err := soda.NewOffsetGetRequest(sodareq)
 	if err != nil {
-		errmsg := "{\"status\":\"1\", \"" + "SODA call failed: " + err.Error() + "\":\"ok\"}"
-		recordSession(time.Now(), errmsg, sessionsTopic, 0)
+		errmsg := "SODA call failed: " + err.Error()
+		err = recordSession( sessionStruct{
+				Id: session_id.String(),
+				Status: status,
+				RunTS: run_ts,
+				Topic: publishTopic,
+				Counter: strconv.Itoa(recordsCounter),
+				LastUpdt: lastUpdt,
+				} )
 		io.WriteString(w, errmsg )
 		log.Fatalf("SODA call failed: %v",err)
 		return
 	}
 
-  for i := 0; i < 14; i++ {
+  for i := 0; i < 4; i++ {
 		ogr.Add(1)
 		go func() {
 			defer ogr.Done()
@@ -157,31 +177,23 @@ func pullSODADataHandler(w http.ResponseWriter, r *http.Request) {
 
 				results := make([]map[string]interface{}, 0)
 				err = json.NewDecoder(resp.Body).Decode(&results)
-				resp.Body.Close()
+				defer resp.Body.Close()
 				if err != nil { log.Fatalf("Can't Decode message from SODA call: %v",err) }
 
 				//Process the data
         for _, r := range results {
 					// increase counter
 					recordsCounter++
-
 					// contruct message envelope
 					json_data := fmt.Sprintf(
-						"{ \"_last_updt\": \"%s\", \"_direction\": \"%s\", \"_fromst\": \"%s\", \"_length\": \"%s\", \"_lif_lat\": \"%s\", \"_lit_lat\": \"%s\", \"_lit_lon\": \"%s\", \"_strheading\": \"%s\", \"_tost\": \"%s\" , \"_traffic\": \"%s\", \"segmentid\": \"%s\", \"start_lon\": \"%s\", \"street\": \"%s\" } \n",
-						r["_last_updt"], r["_direction"], r["_fromst"], r["_length"], r["_lif_lat"], r["_lit_lat"], r["_lit_lon"], r["_strheading"], r["_tost"] , r["_traffic"], r["segmentid"], r["start_lon"], r["street"]  )
-					json_full := constructEnvelope(publishTopic, json_data)
-					//io.WriteString(w, json_full)
+						"{ \"session_id\": \"%s\", \"_last_updt\": \"%s\", \"_direction\": \"%s\", \"_fromst\": \"%s\", \"_length\": \"%s\", \"_lif_lat\": \"%s\", \"_lit_lat\": \"%s\", \"_lit_lon\": \"%s\", \"_strheading\": \"%s\", \"_tost\": \"%s\" , \"_traffic\": \"%s\", \"segmentid\": \"%s\", \"start_lon\": \"%s\", \"street\": \"%s\" } \n",
+						session_id.String(), r["_last_updt"], r["_direction"], r["_fromst"], r["_length"], r["_lif_lat"], r["_lit_lat"], r["_lit_lon"], r["_strheading"], r["_tost"] , r["_traffic"], r["segmentid"], r["start_lon"], r["street"]  )
 
-					// calling pub service
-					//log.Print("DEBUG: Calling pub service at  " + pubServiceUri + "with the payload: \n" + json_full + "\n")
-					rsp, err := http.Post(pubServiceUri, "application/json", bytes.NewBufferString(json_full))
-					defer rsp.Body.Close()
-					/*body_byte*/ _, err = ioutil.ReadAll(rsp.Body)
-					if err != nil {
-						panic(err)
-					}
+					callPublishService(publishTopic, []byte(json_data))
+
 					//log.Print("INFO: Response from pub service ("+ pubServiceUri +"): " + string(body_byte) + "\n\n")
-      	}
+					lastUpdt = fmt.Sprintf("%s", r["_last_updt"])
+      	} // end of range
 
 			}
 		}()
@@ -189,14 +201,126 @@ func pullSODADataHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	ogr.Wait()
 
-	recordSession(time.Now(), "Ok", sessionsTopic, recordsCounter)
+	debug_msg = fmt.Sprintf("DEBUG: Ending session with ID: %s and count of records: %d \n",  session_id.String(), recordsCounter)
+	io.WriteString(w, debug_msg)
+
+	// publish session details
+	err = recordSession( sessionStruct{
+			Id: session_id.String(),
+			Status: status,
+			RunTS: run_ts,
+			Topic: publishTopic,
+			Counter: strconv.Itoa(recordsCounter),
+			LastUpdt: lastUpdt,
+			} )
+	if err != nil {
+		w.WriteHeader(http.StatusNotImplemented)
+		return
+	}
+	// publish last updated date to control topic
+	// TODO
 
 	w.WriteHeader(http.StatusOK)
-	io.WriteString(w, "{\"status\":\"0\", \"message\":\"ok\"}" )
+	debug.FreeOSMemory()
+}
 
+
+func recordSession(session sessionStruct) error {
+	sessionStr, _ := json.Marshal(session)
+	log.Print("DEBUG: sessionStr: " + string(sessionStr))
+	// publish session
+	return callPublishService(sessionsTopic, sessionStr)
+}
+
+func callPublishService(topic string, message []byte) error {
+
+	log.Print("DEBUG: POST callPublishService: topic: " + topic)
+	rsp, err := http.Post(pubServiceUri + "/" + topic, "application/json", bytes.NewBuffer(message) )
+	defer rsp.Body.Close()
+	_, err = ioutil.ReadAll(rsp.Body)
+	if err != nil {
+		panic(err)
+	}
+	return nil
+}
+
+
+
+func publishToTopicWEnvelopePOSTHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	switch {
+
+	  case r.Method == "POST":
+
+			topic := mux.Vars(r)["topic"]
+
+			if r.Body == nil {
+					errormsg := "ERROR: Please send a request body"
+					w.WriteHeader(http.StatusNotImplemented)
+					io.WriteString(w, errormsg  )
+					log.Fatalf(errormsg + "%v", errormsg)
+		      return
+		  }
+		  body, err := ioutil.ReadAll(r.Body)
+		  defer r.Body.Close()
+		  if err != nil {
+				errormsg := "ERROR:  Can't read http body ioutil.ReadAll"
+				w.WriteHeader(http.StatusNotImplemented)
+				io.WriteString(w, errormsg  )
+				log.Fatalf(errormsg + "%v", err)
+				return
+			}
+
+//			go func() {
+				// publish to topic
+				if err := publishToTopicWEnvelope(projectName, topic, string(body) ); err != nil {
+					w.WriteHeader(http.StatusNotImplemented)
+					log.Fatalf("Failed to publish: %v. Topic name: %s\n", err, topic)
+				}
+//			}()
+
+	  default:
+	      http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+
+func publishToTopicWEnvelope(projectName, topic, msg string) error {
+
+	json_full := constructEnvelope(topic, msg)
+
+	ctx := context.Background()
+	client, err := pubsub.NewClient(ctx, projectName)
+	if err != nil {
+		log.Fatalf("Could not create pubsub Client:" + err.Error() + "for project" + projectName)
+	}
+
+	t := client.Topic(topic)
+	result := t.Publish(ctx, &pubsub.Message{
+	Data: []byte(json_full),
+	})
+	// Block until the result is returned and a server-generated
+	// ID is returned for the published message.
+	id, err := result.Get(ctx)
+	if err != nil {
+		log.Print("ERROR: could not get published message ID from PUBSUB: " + err.Error() + "\n")
+		return err
+	}
+
+	log.Print("DEBUG: Published a message; msg ID: " + id + "\n")
+	return nil
+}
+
+type publishEnvelope struct {
+	Topic string  `json:"topic"`
+	Data map[string]string `json:"data"`
 }
 
 func constructEnvelope(topic, data string) string {
+	// USE publishEnvelope instead
 	return fmt.Sprintf( "{\"data\": %s , \"topic\":\"%s\"}", data, topic)
 }
 
@@ -209,87 +333,90 @@ func getENV(k string) string {
 }
 
 
-type publishEnvelope struct {
-	Topic string  `json:"topic"`
-	Data map[string]string `json:"data"`
+
+func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, "ok")
+}
+func homeHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, "Implemented endpoints:\n")
+	fmt.Fprint(w, "GET /schedule\n")
+	fmt.Fprint(w, "POST/GET /us/il/chicago/data/transportation/Chicago-Traffic-Tracker-Congestion-Estimates-by-Segment\n")
 }
 
-func publishHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	ctx := context.Background()
-
-	switch {
-		case r.Method == "GET":
-			w.WriteHeader(http.StatusOK)
-			io.WriteString(w, "{\"status\":\"0\", \"message\":\"method GET not supported\"}" )
-
-	  case r.Method == "POST":
-
-			if r.Body == nil {
-					errormsg := "ERROR: Please send a request body"
-			    log.Fatalf(errormsg + "%v", errormsg)
-					io.WriteString(w, "{\"status\":\"1\", \"" + errormsg + "\":\"ok\"}" )
-		      return
-		  }
-		  body, err := ioutil.ReadAll(r.Body)
-		  defer r.Body.Close()
-		  if err != nil {
-				errormsg := "ERROR:  Can't read http body ioutil.ReadAll"
-		    log.Fatalf(errormsg + "%v", err)
-				io.WriteString(w, "{\"status\":\"1\", \"" + errormsg + "\":\"ok\"}" )
-				return
-			}
-			var msg publishEnvelope
-		  if err := json.Unmarshal([]byte(body), &msg); err != nil {
-				w.WriteHeader(http.StatusOK)
-				msg := "ERROR: Could not decode body into publishEnvelope with Unmarshal: %s \n" + string(body) + "\n Error: " + err.Error()
-				io.WriteString(w, msg)
-		    log.Fatalf(msg)
-				return
-		  }
-			jsondata, _ := json.Marshal(msg.Data)
-			//log.Printf("DEBUG: Topic from envelope: "    + msg.Topic + "\n Data-json from envelope"    + string(jsondata) + "\n")
-			topicName := msg.Topic
-			if topicName == "" {
-				log.Fatalf("ERROR: Topic name is empty")
-			}
-			go func() {
-				// publish to topic
-				//log.Print("DEBUG: Calling PUB service at project " + projectName)
-				client, err := pubsub.NewClient(ctx, projectName)
-				if err != nil {
-					log.Fatalf("Could not create pubsub Client:" + err.Error() + "for project" + projectName)
-				}
-				if err := publish(client, topicName, string(jsondata) ); err != nil {
-					log.Fatalf("Failed to publish: %v. Topic name: %s\n", err, topicName)
-				}
-			}()
-
-	  default:
-	      http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-	}
-
-	w.WriteHeader(http.StatusOK)
-	io.WriteString(w, "{\"status\":\"0\", \"message\":\"ok\"}" )
+func scheduleHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, "ok")
+	log.Print("scheduleHandler called..")
 }
 
+// { "ts":"2018-05-01 10:10:20", "topic":"us.chicago-city.transportation.traffic-tracker-congestion-estimates", "last_updated":"2008-05-24 14:21:04", "counter":90 }
+// { "ts":"2018-05-02 10:10:20", "topic":"us.chicago-city.transportation.traffic-tracker-congestion-estimates", "last_updated":"2008-05-26 14:21:04", "counter":110 }
+// { "ts":"2018-05-03 10:10:20", "topic":"us.chicago-city.transportation.traffic-tracker-congestion-estimates", "last_updated":"2008-05-25 14:21:04", "counter":110 }
+// { "ts":"2018-05-04 10:10:20", "topic":"us.chicago-city.transportation.traffic-tracker-congestion-estimates", "last_updated":"2008-05-29 14:21:04", "counter":110 }
+/*
+type controlStruct struct {
+		Ts string `json:"ts"`
+		Topic string `json:"topic"`
+		LastUpdated string `json:"last_updated"`
+		Counter int `json:"counter"`
+}
 
-func publish(client *pubsub.Client, topic, msg string) error {
+var (
+	 prev_last_updated string
+	 last_updated string
+)
+
+func getLastUpdatedDate(w http.ResponseWriter, r *http.Request){
 	ctx := context.Background()
-	t := client.Topic(topic)
-	result := t.Publish(ctx, &pubsub.Message{
-	Data: []byte(msg),
-	})
-	// Block until the result is returned and a server-generated
-	// ID is returned for the published message.
-	id, err := result.Get(ctx)
+	client, err := pubsub.NewClient(ctx, projectName)
 	if err != nil {
-		log.Print("ERROR: could not get published message ID from PUBSUB: " + err.Error() + "\n")
-		return err
+		fmt.Fprint(w, "Could not create pubsub Client:" + err.Error() + "for project" + projectName)
+		log.Fatalf("Could not create pubsub Client:" + err.Error() + "for project" + projectName)
 	}
 
-	log.Print("DEBUG: Published a message; msg ID: " + id + "\n")
+	sub := client.Subscription("pull-common.controls")
+	sub.ReceiveSettings.MaxExtension = 10 * time.Second
+	defer client.Close()
+	//var prev_last_updated time
+	err = sub.Receive(ctx, func(ctx context.Context, m *pubsub.Message) {
+		last_updated = string(m.Data)
+	 	log.Printf("Got message: %s", m.Data)
 
-	return nil
+		var e controlStruct
+	  if err := json.Unmarshal(m.Data , &e); err != nil {
+			errmsg := "ERROR: Could not decode body into controlStruct type with Unmarshal: " + string(m.Data) + "\n\n"
+	    log.Printf(errmsg)
+			io.WriteString(w, errmsg)
+	  }
+		if e.Topic == publishTopic {
+
+			log.Printf("The message related to topic : "+ publishTopic)
+
+			m.Ack()
+			last_updated = e.LastUpdated
+			t_t1, _ := getTimeFromString(last_updated)
+			t_t2, _ := getTimeFromString(prev_last_updated)
+			if prev_last_updated == "" {
+				prev_last_updated = last_updated
+			} else if t_t1.After( t_t2 ) {
+				// push to prev_last_updated to one the older
+				prev_last_updated = last_updated
+			}
+
+			log.Printf("Between " + prev_last_updated+ " and "+last_updated +"... Oldest last_updated date is: "+ prev_last_updated + "\n\n")
+		}
+	 })
+	 if err != context.Canceled {
+		 return
+	 }
 }
+
+func getDateNow() string {
+	timenow := time.Now()
+	changedtime := fmt.Sprintf("%d-%02d-%02d %02d:%02d:%02d", timenow.Year(), timenow.Month(),timenow.Day(), timenow.Hour(),timenow.Minute(),timenow.Second()  )
+	return changedtime
+}
+
+func getTimeFromString(t string) (time.Time, error) {
+	return time.Parse("2006-01-02 15:04:05", t )
+}
+*/
