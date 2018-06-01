@@ -194,7 +194,7 @@ func initSession() error {
 func getCluster() *gocql.ClusterConfig {
      cluster := gocql.NewCluster(sHost)
 		 cluster.Timeout = 15 * time.Second
-		 cluster.NumConns = 16
+		 cluster.NumConns = 50
 	   cluster.Authenticator = gocql.PasswordAuthenticator{
 	 		Username: sUsername,
 	 		Password: sPassword,

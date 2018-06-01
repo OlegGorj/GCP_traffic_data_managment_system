@@ -4,8 +4,8 @@ runtime: go
 
 env_variables:
   GOOGLE_CLOUD_PROJECT: tf-admin-aabm0pul
-  PUBLISH_SERVICE: https://datasource-soda-worker-dot-tf-admin-aabm0pul.appspot.com/publish
-  DATASOURCE_SODA_URI: https://data.cityofchicago.org/resource/8v9j-bter
+  PUBLISH_SERVICE: https://publisher-worker-dot-tf-admin-aabm0pul.appspot.com/publish
+  DATASOURCE_SODA_CHICAGO_URI: https://data.cityofchicago.org/resource/8v9j-bter
   TRAFFIC_TRACKER_TOPIC: us.chicago-city.transportation.traffic-tracker-congestion-estimates
   SESSIONS_TOPIC: common.sessions
   CONTROLS_TOPIC: common.controls
@@ -30,7 +30,7 @@ resources:
   memory_gb: 2.3
   disk_size_gb: 10
 network:
-  instance_tag: dataservice-instance
+  instance_tag: dataservice-service-instance
   name: shared-network
 automatic_scaling:
   min_num_instances: 1

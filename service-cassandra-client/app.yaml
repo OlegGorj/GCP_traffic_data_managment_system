@@ -29,7 +29,7 @@ resources:
   disk_size_gb: 10
 network:
   name: shared-network
-  instance_tag: cassandraclient-instance
+  instance_tag: cassandraclient-service-instance
 automatic_scaling:
   min_num_instances: 1
   max_num_instances: 5

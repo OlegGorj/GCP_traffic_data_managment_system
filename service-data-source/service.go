@@ -16,8 +16,8 @@ import (
 
 	"google.golang.org/appengine"
 	"github.com/gorilla/mux"
-	"cloud.google.com/go/pubsub"
-  "golang.org/x/net/context"
+	_ "cloud.google.com/go/pubsub"
+  _ "golang.org/x/net/context"
 	"github.com/gocql/gocql"
 
 	"github.com/newrelic/go-agent"
@@ -27,7 +27,7 @@ var (
 	projectName string
 
 	pubServiceUri string
-	sourceSODAUri string
+	sourceSODAUri_Chicago string
 
 	publishTopic string
 	sessionsTopic string
@@ -47,7 +47,7 @@ type sessionStruct struct {
 func main() {
 
 	pubServiceUri = getENV("PUBLISH_SERVICE")
-	sourceSODAUri = getENV("DATASOURCE_SODA_URI")
+	sourceSODAUri_Chicago = getENV("DATASOURCE_SODA_CHICAGO_URI")
 
 	publishTopic = getENV("TRAFFIC_TRACKER_TOPIC")
 	sessionsTopic = getENV("SESSIONS_TOPIC")
@@ -64,28 +64,45 @@ func main() {
 	}
 
 	r := mux.NewRouter()
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/{country}/{state}/{city}/{catalog}/{category}/{dataset}", cityRouterHandler)).Methods("POST")
+	//r.HandleFunc(newrelic.WrapHandleFunc(app, "/{country}/{state}/{city}/{catalog}/{category}/{dataset}/{period}", cityRouterHandler)).Methods("POST")
+
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/liveness_check", healthCheckHandler))
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/readiness_check", healthCheckHandler))
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler))
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/schedule", scheduleHandler)).Methods("GET")
-	r.HandleFunc(newrelic.WrapHandleFunc(app, "/{country}/{state}/{city}/{catalog}/{category}/{dataset}", catalogHandler)).Methods("GET", "POST")
 	r.HandleFunc(newrelic.WrapHandleFunc(app,"/", homeHandler))
-
-	r.HandleFunc(newrelic.WrapHandleFunc(app, "/publish/{topic}", publishToTopicWEnvelopePOSTHandler)).Methods("POST")
 	http.Handle("/", r)
 
 	log.Print("Starting service.....")
 	appengine.Main()
 
 }
-
-func catalogHandler(w http.ResponseWriter, r *http.Request) {
-
+func cityRouterHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	country := mux.Vars(r)["country"]
 	state := mux.Vars(r)["state"]
 	city := mux.Vars(r)["city"]
+	if country == "" || state == "" || city == "" {
+		io.WriteString(w, "ERROR:  Can't have {country}, {state}, {city}, {catalog}, {category} or {dataset} empty...\n")
+		return
+	}
+	switch city {
+		case "Chicago":
+			catalogChicagoHandler(w, r)
+
+		default:
+				io.WriteString(w,"ERROR:  Specified city is not supported...\n")
+				return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func catalogChicagoHandler(w http.ResponseWriter, r *http.Request) {
+
+
 	catalog := mux.Vars(r)["catalog"]
 	category := mux.Vars(r)["category"]
 	dataset := mux.Vars(r)["dataset"]
@@ -100,8 +117,13 @@ func catalogHandler(w http.ResponseWriter, r *http.Request) {
 	if category == "transportation" {
 
 		switch dataset {
+		case "Chicago-Traffic-Tracker-Historical-Congestion-Estimates-by-Segment-2018-Current":
+				ChicagoTrafficTrackerHistoricalCongestionEstimatesBySegment2018Current_DataHandler(w, r)
+				return
+
 			case "Chicago-Traffic-Tracker-Congestion-Estimates-by-Segment":
 				ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler(w, r)
+				return
 
 			default:
 					io.WriteString(w,"ERROR:  Specified dataset is not supported...\n")
@@ -123,12 +145,13 @@ func catalogHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
 	//io.WriteString(w, "{\"status\":\"0\", \"message\":\"ok\"}")
 }
 
 
+func ChicagoTrafficTrackerHistoricalCongestionEstimatesBySegment2018Current_DataHandler(w http.ResponseWriter, r *http.Request) {
 
+}
 
 func ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler(w http.ResponseWriter, r *http.Request) {
 
@@ -143,7 +166,7 @@ func ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler(w http.Respon
 	debug_msg := fmt.Sprintf("DEBUG: Ending session with ID: %s and count of records: %d \n",  session_id.String(), recordsCounter)
 	io.WriteString(w, debug_msg)
 
-	sodareq := soda.NewGetRequest(sourceSODAUri, "")
+	sodareq := soda.NewGetRequest(sourceSODAUri_Chicago, "")
 	sodareq.Format = "json"
 	//sodareq.Query.Limit = 10
   sodareq.Query.AddOrder("_last_updt", soda.DirAsc)
@@ -244,85 +267,6 @@ func callPublishService(topic string, message []byte) error {
 	return nil
 }
 
-
-
-func publishToTopicWEnvelopePOSTHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	switch {
-
-	  case r.Method == "POST":
-
-			topic := mux.Vars(r)["topic"]
-
-			if r.Body == nil {
-					errormsg := "ERROR: Please send a request body"
-					w.WriteHeader(http.StatusNotImplemented)
-					io.WriteString(w, errormsg  )
-					log.Fatalf(errormsg + "%v", errormsg)
-		      return
-		  }
-		  body, err := ioutil.ReadAll(r.Body)
-		  defer r.Body.Close()
-		  if err != nil {
-				errormsg := "ERROR:  Can't read http body ioutil.ReadAll"
-				w.WriteHeader(http.StatusNotImplemented)
-				io.WriteString(w, errormsg  )
-				log.Fatalf(errormsg + "%v", err)
-				return
-			}
-
-//			go func() {
-				// publish to topic
-				if err := publishToTopicWEnvelope(projectName, topic, string(body) ); err != nil {
-					w.WriteHeader(http.StatusNotImplemented)
-					log.Fatalf("Failed to publish: %v. Topic name: %s\n", err, topic)
-				}
-//			}()
-
-	  default:
-	      http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-	}
-
-	w.WriteHeader(http.StatusOK)
-}
-
-
-func publishToTopicWEnvelope(projectName, topic, msg string) error {
-
-	json_full := constructEnvelope(topic, msg)
-
-	ctx := context.Background()
-	client, err := pubsub.NewClient(ctx, projectName)
-	if err != nil {
-		log.Fatalf("Could not create pubsub Client:" + err.Error() + "for project" + projectName)
-	}
-
-	t := client.Topic(topic)
-	result := t.Publish(ctx, &pubsub.Message{
-	Data: []byte(json_full),
-	})
-	// Block until the result is returned and a server-generated
-	// ID is returned for the published message.
-	id, err := result.Get(ctx)
-	if err != nil {
-		log.Print("ERROR: could not get published message ID from PUBSUB: " + err.Error() + "\n")
-		return err
-	}
-
-	log.Print("DEBUG: Published a message; msg ID: " + id + "\n")
-	return nil
-}
-
-type publishEnvelope struct {
-	Topic string  `json:"topic"`
-	Data map[string]string `json:"data"`
-}
-
-func constructEnvelope(topic, data string) string {
-	// USE publishEnvelope instead
-	return fmt.Sprintf( "{\"data\": %s , \"topic\":\"%s\"}", data, topic)
-}
 
 func getENV(k string) string {
 	v := os.Getenv(k)
