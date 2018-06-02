@@ -13,6 +13,7 @@ import (
 	"time"
 	"strconv"
 	"runtime/debug"
+	"strings"
 
 	"google.golang.org/appengine"
 	"github.com/gorilla/mux"
@@ -32,6 +33,7 @@ var (
 	publishTopic string
 	sessionsTopic string
 	controlsTopic string
+	isSchemaDefined bool
 )
 
 type sessionStruct struct {
@@ -64,14 +66,42 @@ func main() {
 	}
 
 	r := mux.NewRouter()
-	r.HandleFunc(newrelic.WrapHandleFunc(app, "/{country}/{state}/{city}/{catalog}/{category}/{dataset}", cityRouterHandler)).Methods("POST")
-	//r.HandleFunc(newrelic.WrapHandleFunc(app, "/{country}/{state}/{city}/{catalog}/{category}/{dataset}/{period}", cityRouterHandler)).Methods("POST")
-
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/liveness_check", healthCheckHandler))
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/readiness_check", healthCheckHandler))
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler))
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/schedule", scheduleHandler)).Methods("GET")
 	r.HandleFunc(newrelic.WrapHandleFunc(app,"/", homeHandler))
+
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/{country}/{state}/{city}/{catalog}/{category}/{dataset}", cityRouterHandler)).Queries("schema", "{schema}").Methods("GET", "POST")
+
+	err = r.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
+		pathTemplate, err := route.GetPathTemplate()
+		if err == nil {
+			fmt.Println("ROUTE:", pathTemplate)
+		}
+		pathRegexp, err := route.GetPathRegexp()
+		if err == nil {
+			fmt.Println("Path regexp:", pathRegexp)
+		}
+		queriesTemplates, err := route.GetQueriesTemplates()
+		if err == nil {
+			fmt.Println("Queries templates:", strings.Join(queriesTemplates, ","))
+		}
+		queriesRegexps, err := route.GetQueriesRegexp()
+		if err == nil {
+			fmt.Println("Queries regexps:", strings.Join(queriesRegexps, ","))
+		}
+		methods, err := route.GetMethods()
+		if err == nil {
+			fmt.Println("Methods:", strings.Join(methods, ","))
+		}
+		fmt.Println()
+		return nil
+	})
+	if err != nil {
+		fmt.Println(err)
+	}
+
 	http.Handle("/", r)
 
 	log.Print("Starting service.....")
@@ -81,19 +111,19 @@ func main() {
 func cityRouterHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	country := mux.Vars(r)["country"]
-	state := mux.Vars(r)["state"]
-	city := mux.Vars(r)["city"]
+	country := strings.ToLower(mux.Vars(r)["country"])
+	state := strings.ToLower(mux.Vars(r)["state"])
+	city := strings.ToLower(mux.Vars(r)["city"])
 	if country == "" || state == "" || city == "" {
 		io.WriteString(w, "ERROR:  Can't have {country}, {state}, {city}, {catalog}, {category} or {dataset} empty...\n")
 		return
 	}
 	switch city {
-		case "Chicago":
+	case "chicago":
 			catalogChicagoHandler(w, r)
 
 		default:
-				io.WriteString(w,"ERROR:  Specified city is not supported...\n")
+				io.WriteString(w,"ERROR:  Specified city " + city +" is not supported...\n")
 				return
 	}
 
@@ -102,26 +132,34 @@ func cityRouterHandler(w http.ResponseWriter, r *http.Request) {
 
 func catalogChicagoHandler(w http.ResponseWriter, r *http.Request) {
 
+	catalog := strings.ToLower(mux.Vars(r)["catalog"])
+	category := strings.ToLower(mux.Vars(r)["category"])
+	dataset := strings.ToLower(mux.Vars(r)["dataset"])
+	schema := strings.ToLower(mux.Vars(r)["schema"])
 
-	catalog := mux.Vars(r)["catalog"]
-	category := mux.Vars(r)["category"]
-	dataset := mux.Vars(r)["dataset"]
+	if schema == "" || schema == "false" {
+		log.Print( "DEBUG:  Assuming schema is not present..\n")
+		isSchemaDefined = false
+	}else{
+		log.Print( "DEBUG: Use Schema to store "+ dataset + "\n")
+		isSchemaDefined = true
+	}
 
 	// making assumptions here - service passing table and keyspace is aware and passing correct ones
 	//  i.e. no error checking at this time (TODO)
 
-	if country == "" || state == "" || city == "" || catalog == "" || category == "" || dataset == ""{
+	if catalog == "" || category == "" || dataset == ""{
 		io.WriteString(w, "ERROR:  Can't have {country}, {state}, {city}, {catalog}, {category} or {dataset} empty...\n")
 		return
 	}
 	if category == "transportation" {
 
 		switch dataset {
-		case "Chicago-Traffic-Tracker-Historical-Congestion-Estimates-by-Segment-2018-Current":
+		case "chicago-traffic-tracker-historical-congestion-estimates-by-segment-2018-current":
 				ChicagoTrafficTrackerHistoricalCongestionEstimatesBySegment2018Current_DataHandler(w, r)
 				return
 
-			case "Chicago-Traffic-Tracker-Congestion-Estimates-by-Segment":
+			case "chicago-traffic-tracker-congestion-estimates-by-segment":
 				ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler(w, r)
 				return
 
@@ -132,7 +170,7 @@ func catalogChicagoHandler(w http.ResponseWriter, r *http.Request) {
 
 	} else if category == "environment" {
 		switch dataset {
-			case "Energy-Usage-2010":
+			case "energy-usage-2010":
 					return
 
 			default:
@@ -141,7 +179,7 @@ func catalogChicagoHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 	}else {
-		io.WriteString(w,"ERROR:  Specified keyspace is not supported...\n")
+		io.WriteString(w,"ERROR:  Specified category is not supported...\n")
 		return
 	}
 
@@ -212,7 +250,7 @@ func ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler(w http.Respon
 						"{ \"session_id\": \"%s\", \"_last_updt\": \"%s\", \"_direction\": \"%s\", \"_fromst\": \"%s\", \"_length\": \"%s\", \"_lif_lat\": \"%s\", \"_lit_lat\": \"%s\", \"_lit_lon\": \"%s\", \"_strheading\": \"%s\", \"_tost\": \"%s\" , \"_traffic\": \"%s\", \"segmentid\": \"%s\", \"start_lon\": \"%s\", \"street\": \"%s\" } \n",
 						session_id.String(), r["_last_updt"], r["_direction"], r["_fromst"], r["_length"], r["_lif_lat"], r["_lit_lat"], r["_lit_lon"], r["_strheading"], r["_tost"] , r["_traffic"], r["segmentid"], r["start_lon"], r["street"]  )
 
-					callPublishService(publishTopic, []byte(json_data))
+					callPublishService(publishTopic, []byte(json_data), session_id.String())
 
 					//log.Print("INFO: Response from pub service ("+ pubServiceUri +"): " + string(body_byte) + "\n\n")
 					lastUpdt = fmt.Sprintf("%s", r["_last_updt"])
@@ -252,13 +290,17 @@ func recordSession(session sessionStruct) error {
 	sessionStr, _ := json.Marshal(session)
 	log.Print("DEBUG: sessionStr: " + string(sessionStr))
 	// publish session
-	return callPublishService(sessionsTopic, sessionStr)
+	return callPublishService(sessionsTopic, sessionStr, session.Id )
 }
 
-func callPublishService(topic string, message []byte) error {
+func callPublishService(topic string, message []byte, session_id string) error {
+	s_id := session_id
+	if session_id == "" {
+		s_id = "_"
+	}
 
 	log.Print("DEBUG: POST callPublishService: topic: " + topic)
-	rsp, err := http.Post(pubServiceUri + "/" + topic, "application/json", bytes.NewBuffer(message) )
+	rsp, err := http.Post(pubServiceUri + "/" + topic + "/" + s_id + "?schema=" + strconv.FormatBool(isSchemaDefined), "application/json", bytes.NewBuffer(message) )
 	defer rsp.Body.Close()
 	_, err = ioutil.ReadAll(rsp.Body)
 	if err != nil {
@@ -279,12 +321,13 @@ func getENV(k string) string {
 
 
 func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, "ok")
+	//fmt.Fprint(w, "ok")
+	fmt.Fprint(w, "{\"alive\": true}" )
 }
 func homeHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "Implemented endpoints:\n")
 	fmt.Fprint(w, "GET /schedule\n")
-	fmt.Fprint(w, "POST/GET /us/il/chicago/data/transportation/Chicago-Traffic-Tracker-Congestion-Estimates-by-Segment\n")
+	fmt.Fprint(w, "POST/GET /us/il/chicago/data/transportation/Chicago-Traffic-Tracker-Congestion-Estimates-by-Segment  \n")
 }
 
 func scheduleHandler(w http.ResponseWriter, r *http.Request) {

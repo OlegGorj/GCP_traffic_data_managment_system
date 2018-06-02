@@ -12,7 +12,8 @@ import (
   "sync"
   b64 "encoding/base64"
 	"bytes"
-	"runtime/debug"
+	_ "strconv"
+	_ "runtime/debug"
 
 	"google.golang.org/appengine"
   "cloud.google.com/go/pubsub"
@@ -103,14 +104,14 @@ func pushHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-type publishEnvelope struct {
-	Topic string  `json:"topic"`
-	Data map[string]string `json:"data"`
-}
+//type publishEnvelope struct {
+//	Topic string  `json:"topic"`
+//	Data map[string]string `json:"data"`
+//}
 
 func pushBackendCassandraRouter(w http.ResponseWriter, r *http.Request, fromtopic string) {
 
-	time.Sleep(3 * time.Second)
+	time.Sleep(4 * time.Second)
 
 	w.Header().Set("Content-Type", "application/json")
 
@@ -131,29 +132,32 @@ func pushBackendCassandraRouter(w http.ResponseWriter, r *http.Request, fromtopi
     log.Printf("ERROR: Could not decode body with Unmarshal: %s \n", string(body))
 		return
   }
-  sDec, _  := b64.StdEncoding.DecodeString( msg.Message.Data )
+
+	schema := msg.Message.Attributes["schema"]
+	pubsub_topic := msg.Message.Attributes["topic"]
+	session_id := msg.Message.Attributes["session_id"]
+
+	log.Print("DEBUG: pushBackendCassandraRouter: pubsub_topic: " + pubsub_topic+ " schema: " + schema + " session_id: " + session_id)
+
+
+	sDec, _  := b64.StdEncoding.DecodeString( msg.Message.Data )
 	// calling cassandra service
-	callCassandraClientService( fromtopic, string(sDec) )
+	callCassandraClientService( fromtopic, string(sDec), schema, session_id )
 
 	w.WriteHeader(http.StatusOK)
 }
 
-func callCassandraClientService(topic string, sDec string){
+func callCassandraClientService(topic string, sDec string, schema string, session_id string){
 
 	c := &http.Client{
    Timeout: 60 * time.Second,
 	}
-	// Based on the name of the topic, determine which table record(s) should be sent to..
-	// This part should be obtained from Config service
-	serviceUri := cassandraServiceUri
-	if topic == trafficTrackingTopic {
-		serviceUri = cassandraServiceUri + "/northamerica/datasetentry"
-	}else if topic == sessionsTopic {
-		serviceUri = cassandraServiceUri + "/common/sessions"
-	}else {
-		log.Print("ERROR: Unsuppoerted value of key \"topic\" in envelope\n\n")
-		return
+
+	s_id := session_id
+	if session_id == "" {
+		s_id = "_"
 	}
+	serviceUri := cassandraServiceUri + "/" + topic + "/" + s_id + "?schema=" + schema
 
 	log.Print("DEBUG: Calling Cassandra service at  " + serviceUri + "with the payload(base64): " + b64.StdEncoding.EncodeToString( []byte(sDec) ) )
 

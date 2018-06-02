@@ -14,6 +14,8 @@ import (
   "sync"
 	"time"
   _ "encoding/base64"
+	"strings"
+
 	"google.golang.org/appengine"
   "cloud.google.com/go/pubsub"
 	"github.com/gocql/gocql"
@@ -32,6 +34,12 @@ var (
 	sUsername string
 	sPassword string
 	sHost string
+
+	traffictrackerTopic string
+	sessionsTopic string
+	controlsTopic string
+
+	isSchemaDefined bool
 )
 
 func main() {
@@ -40,6 +48,11 @@ func main() {
 	sUsername = getENV("CASSANDRA_UNAME")
 	sPassword = getENV("CASSANDRA_UPASS")
 	sHost = getENV("CASSANDRA_HOST")
+
+	traffictrackerTopic = getENV("TRAFFIC_TRACKER_TOPIC")
+	sessionsTopic = getENV("SESSIONS_TOPIC")
+	controlsTopic = getENV("CONTROLS_TOPIC")
+
 	newrelicKey := getENV("NEWRELIC_KEY")
 
 	//  newrelic part
@@ -51,8 +64,10 @@ func main() {
 
 	r := mux.NewRouter()
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler))
-	r.HandleFunc(newrelic.WrapHandleFunc(app, "/insert/{keyspace}/{table}", insertHandler))
 	r.HandleFunc("/", homeHandler)
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/insert/{fromtopic}", insertHandler)).Methods("POST")
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/insert/{fromtopic}/{session_id}", insertHandler)).Queries("schema", "{schema}").Methods("POST")
+
 	http.Handle("/", r)
 
 	log.Print("Starting service.....")
@@ -94,7 +109,7 @@ type sessionStruct struct {
     RunTS string `json:"run_ts"`
 		Topic string `json:"topic"`
 		Status string `json:"status"`
-		Counter int `json:"counter"`
+		Counter string `json:"counter"`
 		LastUpdt string `json:"last_updt"`
 		// dataset ID - to be populated by Cassandra Clent service
 }
@@ -109,6 +124,16 @@ func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 func insertHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
+	fromtopic := strings.ToLower(mux.Vars(r)["fromtopic"])
+	schema := strings.ToLower(mux.Vars(r)["schema"])
+	session_id := strings.ToLower(mux.Vars(r)["session_id"])
+	if fromtopic == "" {
+		io.WriteString(w, "ERROR:  Can't have {fromtopic} empty...\n")
+		return
+	}
+
+	log.Print("DEBUG: insertHandler: Receive.. fromtopic: " + fromtopic + " ,schema: " + schema)
+
   if r.Body == nil {
       log.Print("ERROR: Please send a request body\n")
       return
@@ -120,64 +145,33 @@ func insertHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	table := mux.Vars(r)["table"]
-	kspace := mux.Vars(r)["keyspace"]
-	// making assumptions here - service passing table and keyspace is aware and passing correct ones
-	//  i.e. no error checking at this time (TODO)
-	if table == "" || kspace == "" {
-		log.Printf("ERROR:  Can't have table or keyspace empty...\n")
-		return
-	}
-	if kspace == "northamerica" {
+	var kspace, table string
 
-		switch table {
-			case "datasetentry":
-				datasetentryCassandraWriter(w, r, kspace, table, body)
-				return
+	// mapping b/w topics and keyspace-table
+	switch fromtopic {
 
-			case "catalog":
-					log.Printf("ERROR:  Specified table is not supported...yet..  \n")
-					return
+		case traffictrackerTopic:
+			if schema == "" || schema == "false" {
+				kspace = "northamerica"
+				table = "generic_datasetentry"
+				datasetentryCassandraSchemalessWriter(w, r, kspace, table, body, session_id)
+			}else{
+				kspace = "northamerica"
+				table = "TTCongestionEstimatesBySegment"
+				datasetentryCassandraSchemaWriter(w, r, kspace, table, body, session_id)
+			}
 
-			case "category":
-					log.Printf("ERROR:  Specified table is not supported...yet..  \n")
-					return
+		case sessionsTopic:
+			kspace = "common"
+			table = "sessions"
+			sessionsCassandraWriter(w, r, kspace, table, body)
 
-			case "dataset":
-					log.Printf("ERROR:  Specified table is not supported...yet..  \n")
-					return
-
-			default:
-					log.Printf("ERROR:  Specified table is not supported...\n")
-					return
-		}
-
-	}else if kspace == "common" {
-
-		switch table {
-			case "sessions":
-				sessionsCassandraWriter(w, r, kspace, table, body)
-				return
-
-			default:
-					log.Printf("ERROR:  Specified table is not supported...\n")
-					return
-		}
-
-	}else {
-		log.Printf("ERROR:  Specified keyspace is not supported...\n")
-		return
+		default:
+			log.Printf("ERROR:  Handler for topic " + fromtopic + "not implemented yet.")
+			return
 	}
 
 	w.WriteHeader(http.StatusOK)
-}
-
-func getENV(k string) string {
-	v := os.Getenv(k)
-	if v == "" {
-		log.Fatalf("%s environment variable not set.", k)
-	}
-	return v
 }
 
 //-----------------------------------------------------------------------------------------------
@@ -205,23 +199,53 @@ func getCluster() *gocql.ClusterConfig {
 }
 
 
-type publishEnvelope struct {
-	Topic string  `json:"topic"`
-	Data map[string]string `json:"data"`
+func datasetentryCassandraSchemalessWriter(w http.ResponseWriter, r *http.Request, keyspace string, table string, _body []byte, session_id string) {
+
+	err := initSession()
+	if err != nil {
+		msg := "Error creating Cassandra session: " + err.Error()
+		log.Printf(msg)
+		io.WriteString(w, msg)
+		//log.Fatalf(msg)
+		return
+	}
+
+	defer thesession.Close()
+	query := fmt.Sprintf(
+			"INSERT INTO %s.%s (id, dataset_id, session_id, record) VALUES (%s, %s, %s, '%s')",
+			keyspace, table,
+			gocql.TimeUUID(), gocql.TimeUUID() /* placeholder for dataset_id*/, session_id, _body )
+	err = thesession.Query(query).Exec()
+	if err != nil {
+		msg := "ERROR: datasetentryCassandraSchemalessWriter: Query: "+query+". Error writing to Cassandra " + err.Error()
+		io.WriteString(w, msg)
+		log.Printf(msg)
+		//log.Fatalf(msg)
+		w.WriteHeader(http.StatusNotImplemented)
+		return
+	}
 }
 
-
-func datasetentryCassandraWriter(w http.ResponseWriter, r *http.Request, keyspace string, table string, envelope_body []byte ) {
+func datasetentryCassandraSchemaWriter(w http.ResponseWriter, r *http.Request, keyspace string, table string, _body []byte, session_id string ) {
 
 	// Unmarshal the envelope
-	var message publishEnvelope
-  if err := json.Unmarshal([]byte(envelope_body), &message); err != nil {
+//	var message publishEnvelope
+//  if err := json.Unmarshal([]byte(envelope_body), &message); err != nil {
+//		w.WriteHeader(http.StatusNotImplemented)
+//		errmsg := "ERROR: Could not decode body into publishEnvelope with Unmarshal. " + " Error: " + err.Error()
+//		io.WriteString(w, errmsg)
+//    log.Fatalf(errmsg)
+//		return
+//  }
+	var message datasetentryStruct
+  if err := json.Unmarshal([]byte(_body), &message); err != nil {
 		w.WriteHeader(http.StatusNotImplemented)
-		errmsg := "ERROR: Could not decode body into publishEnvelope with Unmarshal. " + " Error: " + err.Error()
+		errmsg := "ERROR: Could not decode body into datasetentryStruct with Unmarshal. " + " Error: " + err.Error()
 		io.WriteString(w, errmsg)
     log.Fatalf(errmsg)
 		return
   }
+
 	err := initSession()
 	if err != nil {
 		msg := "Error creating Cassandra session: " + err.Error()
@@ -234,10 +258,9 @@ func datasetentryCassandraWriter(w http.ResponseWriter, r *http.Request, keyspac
 	defer thesession.Close()
 	query := fmt.Sprintf(
 			"INSERT INTO %s.%s (id, dataset_id, session_id, direction, fromst, Last_updt, Length, Lif_lat, Lit_lat, Lit_lon, Strheading, Tost, Traffic, Segmentid, Start_lon, Street) VALUES (%s, %s, %s, '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')",
-			keyspace,
-			table,
-			gocql.TimeUUID(), gocql.TimeUUID() /* placeholder for dataset_id*/, message.Data["session_id"],
-			message.Data["_direction"], message.Data["_fromst"], message.Data["_last_updt"], message.Data["_length"], message.Data["_lif_lat"], message.Data["_lit_lat"], message.Data["_lit_lon"], message.Data["_strheading"], message.Data["_tost"], message.Data["_traffic"], message.Data["segmentid"], message.Data["start_lon"], message.Data["street"] )
+			keyspace, table,
+			gocql.TimeUUID(), gocql.TimeUUID() /* placeholder for dataset_id*/, message.SessionID,
+			message.Direction, message.Fromst, message.Last_updt, message.Length, message.Lif_lat, message.Lit_lat, message.Lit_lon, message.Strheading, message.Tost, message.Traffic, message.Segmentid, message.Start_lon, message.Street )
 	err = thesession.Query(query).Exec()
 	if err != nil {
 		msg := "ERROR: datasetentryCassandraWriter: Query: "+query+". Error writing to Cassandra " + err.Error()
@@ -249,14 +272,14 @@ func datasetentryCassandraWriter(w http.ResponseWriter, r *http.Request, keyspac
 	}
 }
 
-func sessionsCassandraWriter(w http.ResponseWriter, r *http.Request, keyspace string, table string, envelope_body []byte ) {
+func sessionsCassandraWriter(w http.ResponseWriter, r *http.Request, keyspace string, table string, _body []byte ) {
 
-	log.Printf("DEBUG: sessionsCassandraWriter: starting attempt to write to Cassandra POST body: " + string(envelope_body) )
+	log.Printf("DEBUG: sessionsCassandraWriter: starting attempt to write to Cassandra POST body: " + string(_body) )
 
-	var message publishEnvelope
-  if err := json.Unmarshal([]byte(envelope_body), &message); err != nil {
+	var message sessionStruct
+  if err := json.Unmarshal([]byte(_body), &message); err != nil {
 		w.WriteHeader(http.StatusNotImplemented)
-		errmsg := "ERROR: sessionsCassandraWriter: Could not decode body into publishEnvelope with Unmarshal. " + " Error: " + err.Error()
+		errmsg := "ERROR: sessionsCassandraWriter: Could not decode body into sessionStruct with Unmarshal. " + " Error: " + err.Error()
 		io.WriteString(w, errmsg)
     log.Fatalf(errmsg)
 		return
@@ -275,7 +298,7 @@ func sessionsCassandraWriter(w http.ResponseWriter, r *http.Request, keyspace st
 			"INSERT INTO %s.%s (id, run_ts, topic, status, events_counter, last_updt_date) VALUES (%s, '%s', '%s', '%s', '%s', '%s')",
 			keyspace,
 			table,
-			message.Data["id"], message.Data["run_ts"], message.Data["topic"], message.Data["status"], message.Data["counter"], message.Data["last_updt"])
+			message.Id, message.RunTS, message.Topic, message.Status, message.Counter, message.LastUpdt )
 	// send back to caller
 	io.WriteString(w, query)
 
@@ -288,4 +311,14 @@ func sessionsCassandraWriter(w http.ResponseWriter, r *http.Request, keyspace st
 		return
 	}
 
+}
+
+
+
+func getENV(k string) string {
+	v := os.Getenv(k)
+	if v == "" {
+		log.Fatalf("%s environment variable not set.", k)
+	}
+	return v
 }

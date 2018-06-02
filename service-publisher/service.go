@@ -10,7 +10,9 @@ import (
 	_ "bytes"
 	"io/ioutil"
 	_ "time"
-	_ "strconv"
+	"strconv"
+	"strings"
+	"runtime/debug"
 
 	"google.golang.org/appengine"
 	"github.com/gorilla/mux"
@@ -30,6 +32,8 @@ var (
 	publishTopic string
 	sessionsTopic string
 	controlsTopic string
+
+	isSchemaDefined bool
 )
 
 type sessionStruct struct {
@@ -66,7 +70,9 @@ func main() {
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/liveness_check", healthCheckHandler))
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/readiness_check", healthCheckHandler))
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler))
-	r.HandleFunc(newrelic.WrapHandleFunc(app, "/publish/{topic}", publishToTopicWEnvelopePOSTHandler)).Methods("POST")
+	//r.HandleFunc(newrelic.WrapHandleFunc(app, "/publish/{topic}", publishToTopicPOSTHandler)).Methods("POST")
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/publish/{topic}/{session_id}", publishToTopicPOSTHandler)).Queries("schema", "{schema}").Methods("POST")
+
 	http.Handle("/", r)
 
 	log.Print("Starting service.....")
@@ -74,11 +80,27 @@ func main() {
 
 }
 
-
-func publishToTopicWEnvelopePOSTHandler(w http.ResponseWriter, r *http.Request) {
+func publishToTopicPOSTHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	topic := mux.Vars(r)["topic"]
+	topic := strings.ToLower(mux.Vars(r)["topic"])
+	schema := strings.ToLower(mux.Vars(r)["schema"])
+	session_id := strings.ToLower(mux.Vars(r)["session_id"])
+
+	log.Print("DEBUG: receive..  topic: " +topic + ", schema: " + schema + ", session_id: " + session_id)
+
+	if schema == "" || schema == "false" {
+		isSchemaDefined = false
+	}else{
+		isSchemaDefined = true
+	}
+	if topic == "" {
+		errormsg := "ERROR: Topic can not be empty"
+		w.WriteHeader(http.StatusNotImplemented)
+		io.WriteString(w, errormsg  )
+		log.Fatalf(errormsg + "%v", errormsg)
+	}
+
 	if r.Body == nil {
 			errormsg := "ERROR: Please send a request body"
 			w.WriteHeader(http.StatusNotImplemented)
@@ -86,6 +108,7 @@ func publishToTopicWEnvelopePOSTHandler(w http.ResponseWriter, r *http.Request) 
 			log.Fatalf(errormsg + "%v", errormsg)
      return
  	}
+
  	body, err := ioutil.ReadAll(r.Body)
  	defer r.Body.Close()
  	if err != nil {
@@ -96,7 +119,7 @@ func publishToTopicWEnvelopePOSTHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	//go func() {
-		if err := publishToTopicWEnvelope(projectName, topic, string(body) ); err != nil {
+		if err := publishToTopic(projectName, topic, string(body), session_id ); err != nil {
 			w.WriteHeader(http.StatusNotImplemented)
 			log.Fatalf("Failed to publish: %v. Topic name: %s\n", err, topic)
 		}
@@ -108,9 +131,10 @@ func publishToTopicWEnvelopePOSTHandler(w http.ResponseWriter, r *http.Request) 
 }
 
 
-func publishToTopicWEnvelope(projectName, topic, msg string) error {
+func publishToTopic(projectName, topic, msg , session_id string) error {
 
-	json_full := constructEnvelope(topic, msg)
+	//json_full := constructEnvelope(topic, msg)
+	json_full := msg
 
 	ctx := context.Background()
 	client, err := pubsub.NewClient(ctx, projectName)
@@ -118,9 +142,16 @@ func publishToTopicWEnvelope(projectName, topic, msg string) error {
 		log.Fatalf("Could not create pubsub Client:" + err.Error() + "for project" + projectName)
 	}
 
+	attr := make( map[string]string )
+	attr["attr1"] = "val1"
+	attr["topic"] = topic
+	attr["schema"] = strconv.FormatBool(isSchemaDefined)
+	attr["session_id"] = session_id
+
 	t := client.Topic(topic)
 	result := t.Publish(ctx, &pubsub.Message{
 	Data: []byte(json_full),
+	Attributes: attr,
 	})
 	// Block until the result is returned and a server-generated
 	// ID is returned for the published message.

@@ -65,13 +65,13 @@ CREATE INDEX IF NOT EXISTS dataset_created on northamerica.dataset(created);
 CREATE INDEX IF NOT EXISTS dataset_updated on northamerica.dataset(updated);
 
 INSERT INTO northamerica.dataset (id, category_id, created_ts, description, name, topic, frequency, pii, updated_ts, ingest_endpoint, schema_table) VALUES
-(3500b8f2-65a3-11e8-83d1-0242ac110006, 3500b8fb-65a3-11e8-83d2-0242ac110006, '2018-03-02T10:10:18.000', 'This dataset contains the current estimated speed for about 1250 segments covering 300 miles of arterial roads. For a more detailed description, go to: http://bit.ly/Q9AZAD.', 'Chicago Traffic Tracker - Congestion Estimates by Segments', 'us.chicago-city.transportation.traffic-tracker-congestion-estimates', 'every 15 minutes', false, '2018-05-02T10:10:18.000', '/us/il/chicago/data/transportation/Chicago-Traffic-Tracker-Congestion-Estimates-by-Segment', 'ChicagoTrafficTrackerCongestionEstimatesBySegment' );
+(3500b8f2-65a3-11e8-83d1-0242ac110006, 3500b8fb-65a3-11e8-83d2-0242ac110006, '2018-03-02T10:10:18.000', 'This dataset contains the current estimated speed for about 1250 segments covering 300 miles of arterial roads. For a more detailed description, go to: http://bit.ly/Q9AZAD.', 'Chicago Traffic Tracker - Congestion Estimates by Segments', 'us.chicago-city.transportation.traffic-tracker-congestion-estimates', 'every 15 minutes', false, '2018-05-02T10:10:18.000', '/us/il/chicago/data/transportation/Chicago-Traffic-Tracker-Congestion-Estimates-by-Segment', 'TTCongestionEstimatesBySegment' );
 
 
 //--------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------
 // Entry
-create table northamerica.ChicagoTrafficTrackerCongestionEstimatesBySegment(
+create table northamerica.TTCongestionEstimatesBySegment (
   id UUID,
   dataset_id UUID,
   session_id UUID,
