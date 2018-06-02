@@ -165,17 +165,18 @@ func publishToTopic(projectName, topic, msg , session_id string) error {
 	return nil
 }
 
-type publishEnvelope struct {
-	Topic string  `json:"topic"`
-	Data map[string]string `json:"data"`
-}
-func constructEnvelope(topic, data string) string {
-	// USE publishEnvelope instead - TODO
-	return fmt.Sprintf( "{\"data\": %s , \"topic\":\"%s\"}", data, topic)
-}
+//type publishEnvelope struct {
+//	Topic string  `json:"topic"`
+//	Data map[string]string `json:"data"`
+//}
+//func constructEnvelope(topic, data string) string {
+//	// USE publishEnvelope instead - TODO
+//	return fmt.Sprintf( "{\"data\": %s , \"topic\":\"%s\"}", data, topic)
+//}
 
 func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, "ok")
+//	fmt.Fprint(w, "ok")
+	fmt.Fprint(w, "{\"alive\": true}" )
 }
 
 func homeHandler(w http.ResponseWriter, r *http.Request) {

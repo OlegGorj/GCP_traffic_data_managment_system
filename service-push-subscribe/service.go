@@ -47,6 +47,8 @@ func main() {
 
 	r := mux.NewRouter()
 	// /_ah/push-handlers/ prefix
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/liveness_check", healthCheckHandler))
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/readiness_check", healthCheckHandler))
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler)).Methods("GET")
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/push/{fromtopic}/{backend}", pushHandler)).Methods("POST")
 	r.HandleFunc("/", homeHandler).Methods("GET")
@@ -74,8 +76,7 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, "ok")
-	log.Print("health check called..")
+	fmt.Fprint(w, "{\"alive\": true}" )
 }
 
 func pushHandler(w http.ResponseWriter, r *http.Request) {

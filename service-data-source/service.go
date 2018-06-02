@@ -33,7 +33,10 @@ var (
 	publishTopic string
 	sessionsTopic string
 	controlsTopic string
+
 	isSchemaDefined bool
+
+	numberGoRoutines int
 )
 
 type sessionStruct struct {
@@ -72,9 +75,11 @@ func main() {
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/schedule", scheduleHandler)).Methods("GET")
 	r.HandleFunc(newrelic.WrapHandleFunc(app,"/", homeHandler))
 
+	//r.HandleFunc(newrelic.WrapHandleFunc(app, "/{country}/{state}/{city}/{catalog}/{category}/{dataset}", cityRouterHandler)).Methods("GET", "POST")
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/{country}/{state}/{city}/{catalog}/{category}/{dataset}", cityRouterHandler)).Queries("schema", "{schema}").Methods("GET", "POST")
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/{country}/{state}/{city}/{catalog}/{category}/{dataset}/{threads:[0-9]+}", cityRouterHandler)).Queries("schema", "{schema}").Methods("GET", "POST")
 
-	err = r.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
+	err = r.Walk( func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
 		pathTemplate, err := route.GetPathTemplate()
 		if err == nil {
 			fmt.Println("ROUTE:", pathTemplate)
@@ -97,7 +102,7 @@ func main() {
 		}
 		fmt.Println()
 		return nil
-	})
+	} )
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -111,6 +116,12 @@ func main() {
 func cityRouterHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
+//	id, err := strconv.Atoi(vars["id"])
+//	if err != nil {
+//			respondWithError(w, http.StatusBadRequest, "Invalid product ID")
+//			return
+//	}
+
 	country := strings.ToLower(mux.Vars(r)["country"])
 	state := strings.ToLower(mux.Vars(r)["state"])
 	city := strings.ToLower(mux.Vars(r)["city"])
@@ -119,8 +130,8 @@ func cityRouterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch city {
-	case "chicago":
-			catalogChicagoHandler(w, r)
+		case "chicago":
+				catalogChicagoHandler(w, r)
 
 		default:
 				io.WriteString(w,"ERROR:  Specified city " + city +" is not supported...\n")
@@ -136,6 +147,19 @@ func catalogChicagoHandler(w http.ResponseWriter, r *http.Request) {
 	category := strings.ToLower(mux.Vars(r)["category"])
 	dataset := strings.ToLower(mux.Vars(r)["dataset"])
 	schema := strings.ToLower(mux.Vars(r)["schema"])
+	threads := strings.ToLower(mux.Vars(r)["threads"])
+	if threads == "" || threads == "0" {
+		numberGoRoutines = 10
+		log.Print( "DEBUG:  Assuming default number of Go routines")
+	}else{
+		var err error
+		numberGoRoutines, err = strconv.Atoi(threads)
+		if err != nil {
+				io.WriteString(w, "ERROR: Invalid nymber of Go routines")
+				return
+		}
+		log.Print( "DEBUG: Using number of Go routines "+ threads)
+	}
 
 	if schema == "" || schema == "false" {
 		log.Print( "DEBUG:  Assuming schema is not present..\n")
@@ -182,8 +206,6 @@ func catalogChicagoHandler(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w,"ERROR:  Specified category is not supported...\n")
 		return
 	}
-
-	//io.WriteString(w, "{\"status\":\"0\", \"message\":\"ok\"}")
 }
 
 
@@ -226,7 +248,7 @@ func ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler(w http.Respon
 		return
 	}
 
-  for i := 0; i < 4; i++ {
+  for i := 0; i < 14; i++ {
 		ogr.Add(1)
 		go func() {
 			defer ogr.Done()

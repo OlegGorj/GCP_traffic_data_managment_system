@@ -64,6 +64,8 @@ func main() {
 
 	r := mux.NewRouter()
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler))
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/liveness_check", healthCheckHandler))
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/readiness_check", healthCheckHandler))
 	r.HandleFunc("/", homeHandler)
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/insert/{fromtopic}", insertHandler)).Methods("POST")
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/insert/{fromtopic}/{session_id}", insertHandler)).Queries("schema", "{schema}").Methods("POST")
@@ -112,13 +114,6 @@ type sessionStruct struct {
 		Counter string `json:"counter"`
 		LastUpdt string `json:"last_updt"`
 		// dataset ID - to be populated by Cassandra Clent service
-}
-
-func homeHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, "ok")
-}
-func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, "ok")
 }
 
 func insertHandler(w http.ResponseWriter, r *http.Request) {
@@ -313,6 +308,13 @@ func sessionsCassandraWriter(w http.ResponseWriter, r *http.Request, keyspace st
 
 }
 
+
+func homeHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, "ok")
+}
+func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, "{\"alive\": true}" )
+}
 
 
 func getENV(k string) string {
