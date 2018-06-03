@@ -13,11 +13,12 @@ import (
 	"time"
 	"strconv"
 	"runtime/debug"
+	"strings"
 
 	"google.golang.org/appengine"
 	"github.com/gorilla/mux"
-	"cloud.google.com/go/pubsub"
-  "golang.org/x/net/context"
+	_ "cloud.google.com/go/pubsub"
+  _ "golang.org/x/net/context"
 	"github.com/gocql/gocql"
 
 	"github.com/newrelic/go-agent"
@@ -27,11 +28,17 @@ var (
 	projectName string
 
 	pubServiceUri string
-	sourceSODAUri string
+	sourceCTTUri_Chicago string
+	sourceCTT2018Uri_Chicago string
 
-	publishTopic string
+	traffictrackerTopic string
+	traffictrackerTopic2018 string
 	sessionsTopic string
 	controlsTopic string
+
+	isSchemaDefined bool
+
+	numberGoRoutines int
 )
 
 type sessionStruct struct {
@@ -47,9 +54,11 @@ type sessionStruct struct {
 func main() {
 
 	pubServiceUri = getENV("PUBLISH_SERVICE")
-	sourceSODAUri = getENV("DATASOURCE_SODA_URI")
+	sourceCTTUri_Chicago = getENV("DATASOURCE_CHICAGOTrafficTracker_URI")
+	sourceCTT2018Uri_Chicago = getENV("DATASOURCE_CHICAGOTrafficTracker2018_URI")
 
-	publishTopic = getENV("TRAFFIC_TRACKER_TOPIC")
+	traffictrackerTopic = getENV("TRAFFIC_TRACKER_TOPIC")
+	traffictrackerTopic2018 = getENV("TRAFFIC_TRACKER2018_TOPIC")
 	sessionsTopic = getENV("SESSIONS_TOPIC")
 	controlsTopic = getENV("CONTROLS_TOPIC")
 
@@ -68,40 +77,111 @@ func main() {
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/readiness_check", healthCheckHandler))
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/_ah/health", healthCheckHandler))
 	r.HandleFunc(newrelic.WrapHandleFunc(app, "/schedule", scheduleHandler)).Methods("GET")
-	r.HandleFunc(newrelic.WrapHandleFunc(app, "/{country}/{state}/{city}/{catalog}/{category}/{dataset}", catalogHandler)).Methods("GET", "POST")
 	r.HandleFunc(newrelic.WrapHandleFunc(app,"/", homeHandler))
 
-	r.HandleFunc(newrelic.WrapHandleFunc(app, "/publish/{topic}", publishToTopicWEnvelopePOSTHandler)).Methods("POST")
+	//r.HandleFunc(newrelic.WrapHandleFunc(app, "/{country}/{state}/{city}/{catalog}/{category}/{dataset}", cityRouterHandler)).Queries("schema", "{schema}").Methods("GET", "POST")
+	r.HandleFunc(newrelic.WrapHandleFunc(app, "/{country}/{state}/{city}/{catalog}/{category}/{dataset}/{threads:[0-9]+}", cityRouterHandler)).Queries("schema", "{schema}").Methods("GET", "POST")
+
+	err = r.Walk( func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
+		pathTemplate, err := route.GetPathTemplate()
+		if err == nil {
+			fmt.Println("ROUTE:", pathTemplate)
+		}
+		pathRegexp, err := route.GetPathRegexp()
+		if err == nil {
+			fmt.Println("Path regexp:", pathRegexp)
+		}
+		queriesTemplates, err := route.GetQueriesTemplates()
+		if err == nil {
+			fmt.Println("Queries templates:", strings.Join(queriesTemplates, ","))
+		}
+		queriesRegexps, err := route.GetQueriesRegexp()
+		if err == nil {
+			fmt.Println("Queries regexps:", strings.Join(queriesRegexps, ","))
+		}
+		methods, err := route.GetMethods()
+		if err == nil {
+			fmt.Println("Methods:", strings.Join(methods, ","))
+		}
+		fmt.Println()
+		return nil
+	} )
+	if err != nil {
+		fmt.Println(err)
+	}
+
 	http.Handle("/", r)
 
 	log.Print("Starting service.....")
 	appengine.Main()
 
 }
-
-func catalogHandler(w http.ResponseWriter, r *http.Request) {
-
+func cityRouterHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	country := mux.Vars(r)["country"]
-	state := mux.Vars(r)["state"]
-	city := mux.Vars(r)["city"]
-	catalog := mux.Vars(r)["catalog"]
-	category := mux.Vars(r)["category"]
-	dataset := mux.Vars(r)["dataset"]
+	country := strings.ToLower(mux.Vars(r)["country"])
+	state := strings.ToLower(mux.Vars(r)["state"])
+	city := strings.ToLower(mux.Vars(r)["city"])
 
-	// making assumptions here - service passing table and keyspace is aware and passing correct ones
-	//  i.e. no error checking at this time (TODO)
+	if country == "" || state == "" || city == "" {
+		io.WriteString(w, "ERROR:  Can't have {country}, {state}, {city}, {catalog}, {category} or {dataset} empty...\n")
+		return
+	}
+	switch city {
+		case "chicago":
+				catalogChicagoHandler(w, r)
 
-	if country == "" || state == "" || city == "" || catalog == "" || category == "" || dataset == ""{
+		default:
+				io.WriteString(w,"ERROR:  Specified city " + city +" is not supported...\n")
+				return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func catalogChicagoHandler(w http.ResponseWriter, r *http.Request) {
+
+	catalog := strings.ToLower(mux.Vars(r)["catalog"])
+	category := strings.ToLower(mux.Vars(r)["category"])
+	dataset := strings.ToLower(mux.Vars(r)["dataset"])
+	schema := strings.ToLower(mux.Vars(r)["schema"])
+	threads := strings.ToLower(mux.Vars(r)["threads"])
+
+	if threads == "" || threads == "0" {
+		numberGoRoutines = 10
+		log.Print( "DEBUG:  Assuming default number of Go routines")
+	}else{
+		var err error
+		numberGoRoutines, err = strconv.Atoi(threads)
+		if err != nil {
+				io.WriteString(w, "ERROR: Invalid nymber of Go routines")
+				return
+		}
+		log.Print( "DEBUG: Using number of Go routines "+ threads)
+	}
+
+	if schema == "" || schema == "false" {
+		log.Print( "DEBUG:  Assuming schema is not present..\n")
+		isSchemaDefined = false
+	}else{
+		log.Print( "DEBUG: Use Schema to store "+ dataset + "\n")
+		isSchemaDefined = true
+	}
+
+	if catalog == "" || category == "" || dataset == ""{
 		io.WriteString(w, "ERROR:  Can't have {country}, {state}, {city}, {catalog}, {category} or {dataset} empty...\n")
 		return
 	}
 	if category == "transportation" {
 
 		switch dataset {
-			case "Chicago-Traffic-Tracker-Congestion-Estimates-by-Segment":
+		case "traffic-tracker-2018-current":
+				ChicagoTrafficTrackerHistoricalCongestionEstimatesBySegment2018Current_DataHandler(w, r)
+				return
+
+			case "traffic-tracker-congestion-estimates-by-segment":
 				ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler(w, r)
+				return
 
 			default:
 					io.WriteString(w,"ERROR:  Specified dataset is not supported...\n")
@@ -110,7 +190,7 @@ func catalogHandler(w http.ResponseWriter, r *http.Request) {
 
 	} else if category == "environment" {
 		switch dataset {
-			case "Energy-Usage-2010":
+			case "energy-usage-2010":
 					return
 
 			default:
@@ -119,16 +199,83 @@ func catalogHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 	}else {
-		io.WriteString(w,"ERROR:  Specified keyspace is not supported...\n")
+		io.WriteString(w,"ERROR:  Specified category is not supported...\n")
 		return
 	}
-
-	w.WriteHeader(http.StatusOK)
-	//io.WriteString(w, "{\"status\":\"0\", \"message\":\"ok\"}")
 }
 
 
+func ChicagoTrafficTrackerHistoricalCongestionEstimatesBySegment2018Current_DataHandler(w http.ResponseWriter, r *http.Request) {
+	var lastUpdt string
+	var recordsCounter int
+	status := "ok"
+	session_id := gocql.TimeUUID()
+	run_ts := time.Now().String()
 
+	w.Header().Set("Content-Type", "application/json")
+
+	sodareq := soda.NewGetRequest(/*sourceCTT2018Uri_Chicago*/ "https://data.cityofchicago.org/resource/sxs8-h27x", "")
+	sodareq.Format = "json"
+	sodareq.Query.Limit = 2
+  sodareq.Query.AddOrder("record_id", soda.DirAsc)
+
+  ogr, err := soda.NewOffsetGetRequest(sodareq)
+	if err != nil {
+		errmsg := "ERROR: SODA call failed: " + err.Error()
+		io.WriteString(w, errmsg )
+
+		err = recordSession( sessionStruct{
+				Id: session_id.String(),
+				Status: status,
+				RunTS: run_ts,
+				Topic: traffictrackerTopic2018,
+				Counter: strconv.Itoa(recordsCounter),
+				LastUpdt: lastUpdt,
+				} )
+		return
+	}
+
+  for i := 0; i < numberGoRoutines; i++ {
+		ogr.Add(1)
+		go func() {
+			defer ogr.Done()
+
+			for ;; {
+				resp, err := ogr.Next(1)
+				defer resp.Body.Close()
+				if err == soda.ErrDone { return }
+				if err != nil { log.Fatal(err) }
+				bodyBytes, _ := ioutil.ReadAll(resp.Body)
+				io.WriteString(w, "DEBUG: Response from SODA service: " + string(bodyBytes) + "\n")
+				callPublishService(traffictrackerTopic2018, bodyBytes, session_id.String())
+
+				recordsCounter++
+
+			}
+		}()
+	}
+	ogr.Wait()
+
+	// publish session details
+	err = recordSession( sessionStruct{
+			Id: session_id.String(),
+			Status: status,
+			RunTS: run_ts,
+			Topic: traffictrackerTopic2018,
+			Counter: strconv.Itoa(recordsCounter),
+			LastUpdt: lastUpdt,
+			} )
+	if err != nil {
+		w.WriteHeader(http.StatusNotImplemented)
+		return
+	}
+
+	debug_msg := fmt.Sprintf("DEBUG: Segment2018Current: Ending session with ID: %s and count of records: %d \n",  session_id.String(), recordsCounter)
+	io.WriteString(w, debug_msg)
+
+	w.WriteHeader(http.StatusOK)
+	debug.FreeOSMemory()
+}
 
 func ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler(w http.ResponseWriter, r *http.Request) {
 
@@ -143,7 +290,7 @@ func ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler(w http.Respon
 	debug_msg := fmt.Sprintf("DEBUG: Ending session with ID: %s and count of records: %d \n",  session_id.String(), recordsCounter)
 	io.WriteString(w, debug_msg)
 
-	sodareq := soda.NewGetRequest(sourceSODAUri, "")
+	sodareq := soda.NewGetRequest(sourceCTTUri_Chicago, "")
 	sodareq.Format = "json"
 	//sodareq.Query.Limit = 10
   sodareq.Query.AddOrder("_last_updt", soda.DirAsc)
@@ -156,7 +303,7 @@ func ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler(w http.Respon
 				Id: session_id.String(),
 				Status: status,
 				RunTS: run_ts,
-				Topic: publishTopic,
+				Topic: traffictrackerTopic,
 				Counter: strconv.Itoa(recordsCounter),
 				LastUpdt: lastUpdt,
 				} )
@@ -165,7 +312,7 @@ func ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler(w http.Respon
 		return
 	}
 
-  for i := 0; i < 4; i++ {
+  for i := 0; i < numberGoRoutines; i++ {
 		ogr.Add(1)
 		go func() {
 			defer ogr.Done()
@@ -184,12 +331,12 @@ func ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler(w http.Respon
         for _, r := range results {
 					// increase counter
 					recordsCounter++
-					// contruct message envelope
+					// contruct message
 					json_data := fmt.Sprintf(
 						"{ \"session_id\": \"%s\", \"_last_updt\": \"%s\", \"_direction\": \"%s\", \"_fromst\": \"%s\", \"_length\": \"%s\", \"_lif_lat\": \"%s\", \"_lit_lat\": \"%s\", \"_lit_lon\": \"%s\", \"_strheading\": \"%s\", \"_tost\": \"%s\" , \"_traffic\": \"%s\", \"segmentid\": \"%s\", \"start_lon\": \"%s\", \"street\": \"%s\" } \n",
 						session_id.String(), r["_last_updt"], r["_direction"], r["_fromst"], r["_length"], r["_lif_lat"], r["_lit_lat"], r["_lit_lon"], r["_strheading"], r["_tost"] , r["_traffic"], r["segmentid"], r["start_lon"], r["street"]  )
 
-					callPublishService(publishTopic, []byte(json_data))
+					callPublishService(traffictrackerTopic, []byte(json_data), session_id.String())
 
 					//log.Print("INFO: Response from pub service ("+ pubServiceUri +"): " + string(body_byte) + "\n\n")
 					lastUpdt = fmt.Sprintf("%s", r["_last_updt"])
@@ -209,7 +356,7 @@ func ChicagoTrafficTrackerCongestionEstimatesBySegment_DataHandler(w http.Respon
 			Id: session_id.String(),
 			Status: status,
 			RunTS: run_ts,
-			Topic: publishTopic,
+			Topic: traffictrackerTopic,
 			Counter: strconv.Itoa(recordsCounter),
 			LastUpdt: lastUpdt,
 			} )
@@ -229,13 +376,17 @@ func recordSession(session sessionStruct) error {
 	sessionStr, _ := json.Marshal(session)
 	log.Print("DEBUG: sessionStr: " + string(sessionStr))
 	// publish session
-	return callPublishService(sessionsTopic, sessionStr)
+	return callPublishService(sessionsTopic, sessionStr, session.Id )
 }
 
-func callPublishService(topic string, message []byte) error {
+func callPublishService(topic string, message []byte, session_id string) error {
+	s_id := session_id
+	if session_id == "" {
+		s_id = "_"
+	}
 
 	log.Print("DEBUG: POST callPublishService: topic: " + topic)
-	rsp, err := http.Post(pubServiceUri + "/" + topic, "application/json", bytes.NewBuffer(message) )
+	rsp, err := http.Post(pubServiceUri + "/" + topic + "/" + s_id + "?schema=" + strconv.FormatBool(isSchemaDefined), "application/json", bytes.NewBuffer(message) )
 	defer rsp.Body.Close()
 	_, err = ioutil.ReadAll(rsp.Body)
 	if err != nil {
@@ -244,85 +395,6 @@ func callPublishService(topic string, message []byte) error {
 	return nil
 }
 
-
-
-func publishToTopicWEnvelopePOSTHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	switch {
-
-	  case r.Method == "POST":
-
-			topic := mux.Vars(r)["topic"]
-
-			if r.Body == nil {
-					errormsg := "ERROR: Please send a request body"
-					w.WriteHeader(http.StatusNotImplemented)
-					io.WriteString(w, errormsg  )
-					log.Fatalf(errormsg + "%v", errormsg)
-		      return
-		  }
-		  body, err := ioutil.ReadAll(r.Body)
-		  defer r.Body.Close()
-		  if err != nil {
-				errormsg := "ERROR:  Can't read http body ioutil.ReadAll"
-				w.WriteHeader(http.StatusNotImplemented)
-				io.WriteString(w, errormsg  )
-				log.Fatalf(errormsg + "%v", err)
-				return
-			}
-
-//			go func() {
-				// publish to topic
-				if err := publishToTopicWEnvelope(projectName, topic, string(body) ); err != nil {
-					w.WriteHeader(http.StatusNotImplemented)
-					log.Fatalf("Failed to publish: %v. Topic name: %s\n", err, topic)
-				}
-//			}()
-
-	  default:
-	      http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-	}
-
-	w.WriteHeader(http.StatusOK)
-}
-
-
-func publishToTopicWEnvelope(projectName, topic, msg string) error {
-
-	json_full := constructEnvelope(topic, msg)
-
-	ctx := context.Background()
-	client, err := pubsub.NewClient(ctx, projectName)
-	if err != nil {
-		log.Fatalf("Could not create pubsub Client:" + err.Error() + "for project" + projectName)
-	}
-
-	t := client.Topic(topic)
-	result := t.Publish(ctx, &pubsub.Message{
-	Data: []byte(json_full),
-	})
-	// Block until the result is returned and a server-generated
-	// ID is returned for the published message.
-	id, err := result.Get(ctx)
-	if err != nil {
-		log.Print("ERROR: could not get published message ID from PUBSUB: " + err.Error() + "\n")
-		return err
-	}
-
-	log.Print("DEBUG: Published a message; msg ID: " + id + "\n")
-	return nil
-}
-
-type publishEnvelope struct {
-	Topic string  `json:"topic"`
-	Data map[string]string `json:"data"`
-}
-
-func constructEnvelope(topic, data string) string {
-	// USE publishEnvelope instead
-	return fmt.Sprintf( "{\"data\": %s , \"topic\":\"%s\"}", data, topic)
-}
 
 func getENV(k string) string {
 	v := os.Getenv(k)
@@ -335,12 +407,13 @@ func getENV(k string) string {
 
 
 func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, "ok")
+	//fmt.Fprint(w, "ok")
+	fmt.Fprint(w, "{\"alive\": true}" )
 }
 func homeHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "Implemented endpoints:\n")
 	fmt.Fprint(w, "GET /schedule\n")
-	fmt.Fprint(w, "POST/GET /us/il/chicago/data/transportation/Chicago-Traffic-Tracker-Congestion-Estimates-by-Segment\n")
+	fmt.Fprint(w, "POST/GET /us/il/chicago/data/transportation/Chicago-Traffic-Tracker-Congestion-Estimates-by-Segment  \n")
 }
 
 func scheduleHandler(w http.ResponseWriter, r *http.Request) {
@@ -387,9 +460,9 @@ func getLastUpdatedDate(w http.ResponseWriter, r *http.Request){
 	    log.Printf(errmsg)
 			io.WriteString(w, errmsg)
 	  }
-		if e.Topic == publishTopic {
+		if e.Topic == traffictrackerTopic {
 
-			log.Printf("The message related to topic : "+ publishTopic)
+			log.Printf("The message related to topic : "+ traffictrackerTopic)
 
 			m.Ack()
 			last_updated = e.LastUpdated

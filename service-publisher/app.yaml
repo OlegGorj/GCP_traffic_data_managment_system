@@ -1,0 +1,28 @@
+# Common part
+service: publisher-worker
+runtime: go
+env_variables:
+  GOOGLE_CLOUD_PROJECT: tf-admin-aabm0pul
+  PUBLISH_SERVICE: https://datasource-soda-worker-dot-tf-admin-aabm0pul.appspot.com/publish
+  DATASOURCE_SODA_URI: https://data.cityofchicago.org/resource/8v9j-bter
+  TRAFFIC_TRACKER_TOPIC: us.chicago-city.transportation.traffic-tracker-congestion-estimates
+  SESSIONS_TOPIC: common.sessions
+  CONTROLS_TOPIC: common.controls
+  DATADOG_API_KEY: '35976cc80ec87e62b9ba7784794edcb8719d88cc'
+  NEWRELIC_KEY: 'df553dd04a541579cffd9a3a60c7afa9ca692cc7'
+
+# FLEX environment
+env: flex
+resources:
+  cpu: 0.5
+  memory_gb: 1.3
+  disk_size_gb: 10
+network:
+  instance_tag: publish-service-instance
+  name: shared-network
+automatic_scaling:
+  min_num_instances: 1
+  max_num_instances: 50
+  cool_down_period_sec: 60
+  cpu_utilization:
+    target_utilization: 0.5

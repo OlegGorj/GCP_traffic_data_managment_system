@@ -4,9 +4,11 @@ runtime: go
 
 env_variables:
   GOOGLE_CLOUD_PROJECT: tf-admin-aabm0pul
-  PUBLISH_SERVICE: https://datasource-soda-worker-dot-tf-admin-aabm0pul.appspot.com/publish
-  DATASOURCE_SODA_URI: https://data.cityofchicago.org/resource/8v9j-bter
+  PUBLISH_SERVICE: https://publisher-worker-dot-tf-admin-aabm0pul.appspot.com/publish
+  DATASOURCE_CHICAGOTrafficTracker_URI: https://data.cityofchicago.org/resource/8v9j-bter
+  DATASOURCE_CHICAGOTrafficTracker2018_URI: https://data.cityofchicago.org/resource/sxs8-h27x.json
   TRAFFIC_TRACKER_TOPIC: us.chicago-city.transportation.traffic-tracker-congestion-estimates
+  TRAFFIC_TRACKER2018_TOPIC: us.chicago-city.transportation.traffic-tracker-2018-current
   SESSIONS_TOPIC: common.sessions
   CONTROLS_TOPIC: common.controls
   DATADOG_API_KEY: '35976cc80ec87e62b9ba7784794edcb8719d88cc'
@@ -30,11 +32,11 @@ resources:
   memory_gb: 2.3
   disk_size_gb: 10
 network:
-  instance_tag: dataservice-instance
+  instance_tag: dataservice-service-instance
   name: shared-network
 automatic_scaling:
   min_num_instances: 1
   max_num_instances: 15
   cool_down_period_sec: 60
   cpu_utilization:
-    target_utilization: 0.5
+    target_utilization: 0.2

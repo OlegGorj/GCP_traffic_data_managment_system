@@ -4,6 +4,10 @@ runtime: go
 
 env_variables:
   GOOGLE_CLOUD_PROJECT: tf-admin-aabm0pul
+  TRAFFIC_TRACKER_TOPIC: us.chicago-city.transportation.traffic-tracker-congestion-estimates
+  TRAFFIC_TRACKER2018_TOPIC: us.chicago-city.transportation.traffic-tracker-2018-current
+  SESSIONS_TOPIC: common.sessions
+  CONTROLS_TOPIC: common.controls
   CASSANDRA_HOST: 35.203.13.206
   CASSANDRA_UNAME: cassandra
   CASSANDRA_UPASS: Password32
@@ -29,10 +33,10 @@ resources:
   disk_size_gb: 10
 network:
   name: shared-network
-  instance_tag: cassandraclient-instance
+  instance_tag: cassandraclient-service-instance
 automatic_scaling:
   min_num_instances: 1
-  max_num_instances: 5
+  max_num_instances: 15
   cool_down_period_sec: 60
   cpu_utilization:
-    target_utilization: 0.5
+    target_utilization: 0.2

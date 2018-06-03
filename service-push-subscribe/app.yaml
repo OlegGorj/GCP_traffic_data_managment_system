@@ -29,10 +29,10 @@ resources:
   disk_size_gb: 10
 network:
   name: shared-network
-  instance_tag: sub-push-instance
+  instance_tag: sub-push-service-instance
 automatic_scaling:
   min_num_instances: 1
   max_num_instances: 15
   cool_down_period_sec: 60
   cpu_utilization:
-    target_utilization: 0.5
+    target_utilization: 0.2
