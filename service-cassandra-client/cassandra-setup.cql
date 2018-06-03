@@ -66,6 +66,8 @@ CREATE INDEX IF NOT EXISTS dataset_updated on northamerica.dataset(updated);
 
 INSERT INTO northamerica.dataset (id, category_id, created_ts, description, name, topic, frequency, pii, updated_ts, ingest_endpoint, schema_table) VALUES
 (3500b8f2-65a3-11e8-83d1-0242ac110006, 3500b8fb-65a3-11e8-83d2-0242ac110006, '2018-03-02T10:10:18.000', 'This dataset contains the current estimated speed for about 1250 segments covering 300 miles of arterial roads. For a more detailed description, go to: http://bit.ly/Q9AZAD.', 'Chicago Traffic Tracker - Congestion Estimates by Segments', 'us.chicago-city.transportation.traffic-tracker-congestion-estimates', 'every 15 minutes', false, '2018-05-02T10:10:18.000', '/us/il/chicago/data/transportation/Chicago-Traffic-Tracker-Congestion-Estimates-by-Segment', 'TTCongestionEstimatesBySegment' );
+INSERT INTO northamerica.dataset (id, category_id, created_ts, description, name, topic, frequency, pii, updated_ts, ingest_endpoint, schema_table) VALUES
+(84dedce9-668a-11e8-b39a-0242ac110006, 3500b8fb-65a3-11e8-83d2-0242ac110006, '2018-05-02T10:10:18.000', 'This dataset contains the historical estimated congestion for over 1,000 traffic segments, starting in approximately March 2018. Older records are in https://data.cityofchicago.org/d/77hq-huss.', 'Chicago Traffic Tracker - Historical Congestion Estimates by Segment - 2018-Current', 'us.chicago-city.transportation.traffic-tracker-2018-current', 'every 15 minutes', false, '2018-05-31T10:10:18.000', '/us/il/chicago/data/transportation/Chicago-Traffic-Tracker-Congestion-Estimates-by-Segment-2018-Current', 'TTCongestionEstimatesBySegment2018Current' );
 
 
 //--------------------------------------------------------------------------------

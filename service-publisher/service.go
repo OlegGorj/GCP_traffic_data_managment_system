@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"runtime/debug"
+	"time"
 
 	"google.golang.org/appengine"
 	"github.com/gorilla/mux"
@@ -118,12 +119,15 @@ func publishToTopicPOSTHandler(w http.ResponseWriter, r *http.Request) {
 		log.Fatalf(errormsg + "%v", err)
 		return
 	}
-	//go func() {
+
+	time.Sleep(2 * time.Second)
+
+	go func() {
 		if err := publishToTopic(projectName, topic, string(body), session_id ); err != nil {
 			w.WriteHeader(http.StatusNotImplemented)
 			log.Fatalf("Failed to publish: %v. Topic name: %s\n", err, topic)
 		}
-	//}()
+	}()
 
 	w.WriteHeader(http.StatusOK)
 	debug.FreeOSMemory()
@@ -133,7 +137,6 @@ func publishToTopicPOSTHandler(w http.ResponseWriter, r *http.Request) {
 
 func publishToTopic(projectName, topic, msg , session_id string) error {
 
-	//json_full := constructEnvelope(topic, msg)
 	json_full := msg
 
 	ctx := context.Background()
@@ -165,15 +168,6 @@ func publishToTopic(projectName, topic, msg , session_id string) error {
 	return nil
 }
 
-//type publishEnvelope struct {
-//	Topic string  `json:"topic"`
-//	Data map[string]string `json:"data"`
-//}
-//func constructEnvelope(topic, data string) string {
-//	// USE publishEnvelope instead - TODO
-//	return fmt.Sprintf( "{\"data\": %s , \"topic\":\"%s\"}", data, topic)
-//}
-
 func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 //	fmt.Fprint(w, "ok")
 	fmt.Fprint(w, "{\"alive\": true}" )
@@ -181,7 +175,7 @@ func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 
 func homeHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "Implemented endpoints:\n")
-	fmt.Fprint(w, "POST /publish/{topic name}\n")
+	fmt.Fprint(w, "POST /publish/{topic name}?schema={true|false}\n")
 }
 
 func scheduleHandler(w http.ResponseWriter, r *http.Request) {

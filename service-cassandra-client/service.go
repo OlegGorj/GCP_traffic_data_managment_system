@@ -36,6 +36,7 @@ var (
 	sHost string
 
 	traffictrackerTopic string
+	traffictrackerTopic2018 string
 	sessionsTopic string
 	controlsTopic string
 
@@ -50,6 +51,7 @@ func main() {
 	sHost = getENV("CASSANDRA_HOST")
 
 	traffictrackerTopic = getENV("TRAFFIC_TRACKER_TOPIC")
+	traffictrackerTopic2018 = getENV("TRAFFIC_TRACKER2018_TOPIC")
 	sessionsTopic = getENV("SESSIONS_TOPIC")
 	controlsTopic = getENV("CONTROLS_TOPIC")
 
@@ -155,6 +157,11 @@ func insertHandler(w http.ResponseWriter, r *http.Request) {
 				table = "TTCongestionEstimatesBySegment"
 				datasetentryCassandraSchemaWriter(w, r, kspace, table, body, session_id)
 			}
+
+		case traffictrackerTopic2018:
+				kspace = "northamerica"
+				table = "generic_datasetentry"
+				datasetentryCassandraSchemalessWriter(w, r, kspace, table, body, session_id)
 
 		case sessionsTopic:
 			kspace = "common"
