@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"runtime/debug"
-	"time"
+	_ "time"
 
 	"google.golang.org/appengine"
 	"github.com/gorilla/mux"
@@ -120,7 +120,7 @@ func publishToTopicPOSTHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	time.Sleep(2 * time.Second)
+	//time.Sleep(2 * time.Second)
 
 	go func() {
 		if err := publishToTopic(projectName, topic, string(body), session_id ); err != nil {

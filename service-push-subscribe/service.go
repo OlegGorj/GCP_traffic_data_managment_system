@@ -7,7 +7,7 @@ import (
   _ "io"
   "io/ioutil"
   "encoding/json"
-  "time"
+  _ "time"
   "os"
   "sync"
   b64 "encoding/base64"
@@ -112,7 +112,7 @@ func pushHandler(w http.ResponseWriter, r *http.Request) {
 
 func pushBackendCassandraRouter(w http.ResponseWriter, r *http.Request, fromtopic string) {
 
-	time.Sleep(4 * time.Second)
+	//time.Sleep(4 * time.Second)
 
 	w.Header().Set("Content-Type", "application/json")
 
