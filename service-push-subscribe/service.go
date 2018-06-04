@@ -7,7 +7,7 @@ import (
   _ "io"
   "io/ioutil"
   "encoding/json"
-  _ "time"
+  "time"
   "os"
   "sync"
   b64 "encoding/base64"
@@ -105,14 +105,7 @@ func pushHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-//type publishEnvelope struct {
-//	Topic string  `json:"topic"`
-//	Data map[string]string `json:"data"`
-//}
-
 func pushBackendCassandraRouter(w http.ResponseWriter, r *http.Request, fromtopic string) {
-
-	//time.Sleep(4 * time.Second)
 
 	w.Header().Set("Content-Type", "application/json")
 
@@ -151,7 +144,7 @@ func pushBackendCassandraRouter(w http.ResponseWriter, r *http.Request, fromtopi
 func callCassandraClientService(topic string, sDec string, schema string, session_id string){
 
 	c := &http.Client{
-   Timeout: 60 * time.Second,
+   Timeout: 20 * time.Second,
 	}
 
 	s_id := session_id

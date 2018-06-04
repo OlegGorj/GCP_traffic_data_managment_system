@@ -122,12 +122,10 @@ func publishToTopicPOSTHandler(w http.ResponseWriter, r *http.Request) {
 
 	//time.Sleep(2 * time.Second)
 
-	go func() {
 		if err := publishToTopic(projectName, topic, string(body), session_id ); err != nil {
 			w.WriteHeader(http.StatusNotImplemented)
 			log.Fatalf("Failed to publish: %v. Topic name: %s\n", err, topic)
 		}
-	}()
 
 	w.WriteHeader(http.StatusOK)
 	debug.FreeOSMemory()
@@ -151,20 +149,23 @@ func publishToTopic(projectName, topic, msg , session_id string) error {
 	attr["schema"] = strconv.FormatBool(isSchemaDefined)
 	attr["session_id"] = session_id
 
-	t := client.Topic(topic)
-	result := t.Publish(ctx, &pubsub.Message{
-	Data: []byte(json_full),
-	Attributes: attr,
-	})
+		t := client.Topic(topic)
+		result := t.Publish(ctx, &pubsub.Message{
+		Data: []byte(json_full),
+		Attributes: attr,
+		})
 	// Block until the result is returned and a server-generated
 	// ID is returned for the published message.
-	id, err := result.Get(ctx)
-	if err != nil {
-		log.Print("ERROR: could not get published message ID from PUBSUB: " + err.Error() + "\n")
-		return err
-	}
+	go func() error{
+		id, err := result.Get(ctx)
+		if err != nil {
+			log.Print("ERROR: could not get published message ID from PUBSUB: " + err.Error() + "\n")
+			return err
+		}
+		log.Print("DEBUG: Published a message; msg ID: " + id + "\n")
+		return nil
+	}()
 
-	log.Print("DEBUG: Published a message; msg ID: " + id + "\n")
 	return nil
 }
 
