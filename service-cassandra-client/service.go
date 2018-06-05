@@ -230,15 +230,6 @@ func datasetentryCassandraSchemalessWriter(w http.ResponseWriter, r *http.Reques
 
 func datasetentryCassandraSchemaWriter(w http.ResponseWriter, r *http.Request, keyspace string, table string, _body []byte, session_id string ) {
 
-	// Unmarshal the envelope
-//	var message publishEnvelope
-//  if err := json.Unmarshal([]byte(envelope_body), &message); err != nil {
-//		w.WriteHeader(http.StatusNotImplemented)
-//		errmsg := "ERROR: Could not decode body into publishEnvelope with Unmarshal. " + " Error: " + err.Error()
-//		io.WriteString(w, errmsg)
-//    log.Fatalf(errmsg)
-//		return
-//  }
 	var message datasetentryStruct
   if err := json.Unmarshal([]byte(_body), &message); err != nil {
 		w.WriteHeader(http.StatusNotImplemented)
